@@ -1,5 +1,5 @@
 project(
-    'pywm-atha',
+    'pywm-next',
     'c',
     version: '0.4.0',
     license: 'MIT',

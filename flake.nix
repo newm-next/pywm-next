@@ -1,5 +1,5 @@
 {
-  description = "pywm-atha - core of newm-atha";
+  description = "pywm-next - core of newm-next";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -17,9 +17,9 @@
       inherit (pkgs.lib) optionals;
     in
     {
-      packages.pywm-atha = (
+      packages.pywm-next = (
         pkgs.python3.pkgs.buildPythonPackage rec {
-          pname = "pywm-atha";
+          pname = "pywm-next";
           version = "0.4alpha";
 
           # BEGIN f**king subprojects bug workaround for 'src = ./.'

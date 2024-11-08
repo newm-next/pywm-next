@@ -1,8 +1,8 @@
-# pywm-atha - a fork of pywm
+# pywm-next - a fork of pywm
 
-~~Unfortunately, newm as well as pywm are currently unmaintained.~~
+This is a fork of [pywm](https://github.com/jbuchermn/pywm).
 
-pywm-atha is an abstraction layer for [newm-atha](https://sr.ht/~atha/newm-atha) encapsulating all c code.
+pywm-next is an abstraction layer for [newm-next](https://github.com/newm-next/newm-next) encapsulating all c code.
 
 Basically this is a very tiny compositor built on top of [wlroots](https://github.com/swaywm/wlroots), making all the assumptions that wlroots does not.
 On the Python side pywm exposes Wayland clients (XDG and XWayland) as so-called views and passes along all input. 
@@ -20,7 +20,7 @@ With python, you can do lots of complex(or not so complex) and creative things t
 
 ## Install
 
-you should have no reason to install this, it is installed as a dependency of newm-atha
+you should have no reason to install this, it is installed as a dependency of newm-next
 
 
 ### Build Dependenices
@@ -45,10 +45,10 @@ Prerequisites for PyWM, apart from Python, are given by [wlroots](https://gitlab
 
 
 ```
-pip3 install git+https://git.sr.ht/~atha/pywm-atha
+pip3 install git+https://github.com/newm-next/pywm-next
 ```
 
-In case of issues, clone the repo and execute `meson build && ninja -C build` in order to debug.
+In case of issues, clone the repo and execute `git submodule update --init --recursive && meson build && ninja -C build` in order to debug.
 
 ## Configuration
 
