@@ -16,6 +16,7 @@
 
 #ifdef WM_CUSTOM_RENDERER
 
+#include <sys/time.h>
 #include <render/gles2.h>
 #include "wm/shaders/wm_shaders.h"
 
@@ -244,6 +245,7 @@ void wm_renderer_add_primitive_shader(struct wm_renderer *renderer,
     renderer->primitive_shaders[i].height = glGetUniformLocation(renderer->primitive_shaders[i].shader, "height");
     renderer->primitive_shaders[i].pos_attrib = glGetAttribLocation(renderer->primitive_shaders[i].shader, "pos");
     renderer->primitive_shaders[i].tex_attrib = glGetAttribLocation(renderer->primitive_shaders[i].shader, "texcoord");
+		renderer->primitive_shaders[i].time = glGetUniformLocation(renderer->primitive_shaders[i].shader, "time");
 
     if(n_params_float){
         renderer->primitive_shaders[i].params_float = glGetUniformLocation(renderer->primitive_shaders[i].shader, "params_float");
@@ -435,6 +437,16 @@ static void render_primitive_with_matrix(
 
     glUniformMatrix3fv(renderer->primitive_shader_selected->proj, 1, GL_FALSE, gl_matrix);
     glUniform1f(renderer->primitive_shader_selected->alpha, alpha);
+		static float ttk = 0;
+		if (renderer->primitive_shader_selected->time != -1)
+		{
+			struct timeval now;
+			gettimeofday(&now, NULL);
+			/* float t = (float)now.tv_sec + ((float)now.tv_usec * 0.000001f); */
+			ttk += (float)now.tv_usec * 0.000001f;
+			glUniform1f(renderer->primitive_shader_selected->time, ttk);
+			wlr_log(WLR_ERROR, "THIS IS THE FUCKING TIME VALUE %f", ttk);
+		}
     glUniform1f(renderer->primitive_shader_selected->width, box->width);
     glUniform1f(renderer->primitive_shader_selected->height, box->height);
 

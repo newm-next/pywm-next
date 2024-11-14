@@ -5,6 +5,7 @@ varying vec2 v_texcoord;
 
 uniform float width;
 uniform float height;
+uniform float time;
 
 void main() {
     if(v_texcoord.x*width > width - params_float[9] &&  v_texcoord.y*height > height - params_float[9]){
@@ -50,7 +51,7 @@ void main() {
 				1.
 				) * params_float[7] * alpha;
 
-		float angle = params_float[8];
+		float angle = time * 10.0;
 		angle -= (360.0 * floor(angle / 360.0));
 		angle *= 0.01745532925;
 		vec2 direction = vec2(cos(angle), sin(angle));

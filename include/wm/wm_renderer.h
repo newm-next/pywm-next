@@ -56,6 +56,7 @@ struct wm_renderer_primitive_shader {
     GLint alpha;
     GLint pos_attrib;
     GLint tex_attrib;
+		GLfloat time;
 
     GLint width;
     GLint height;
