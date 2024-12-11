@@ -1,3 +1,7 @@
+# This branch is NOT ready to be used
+
+Currently it only have the submodule changes. pywm source code needs to be updated now !
+
 # pywm-next - a fork of pywm
 
 This is a fork of [pywm](https://github.com/jbuchermn/pywm).
