@@ -11,6 +11,10 @@
 
 struct wm_output;
 struct wm_renderer;
+struct wlr_output_state;
+struct wlr_buffer;
+struct wlr_texture;
+struct wlr_render_pass;
 
 #include <GLES3/gl32.h>
 struct wm_renderer_texture_shader {
@@ -152,6 +156,13 @@ struct wm_renderer {
     struct wm_renderer_primitive_shader* primitive_shader_selected;
 
     unsigned int selected_buffer;
+
+    /* wlroots 0.20: the custom pipeline draws into a wlr_buffer through a render pass */
+    struct wlr_buffer* buffer;
+    struct wlr_texture* buffer_texture;
+    struct wlr_render_pass* pass;
+    GLuint fbo;
+    float projection[9];
 #endif
 };
 
@@ -180,9 +191,10 @@ bool wm_renderer_check_primitive_params(struct wm_renderer* renderer, int n_int,
 
 void wm_renderer_to_buffer(struct wm_renderer* renderer, unsigned int buffer);
 
-void wm_renderer_begin(struct wm_renderer *renderer, struct wm_output *output);
+bool wm_renderer_begin(struct wm_renderer *renderer, struct wm_output *output,
+                       struct wlr_output_state *state);
 void wm_renderer_end(struct wm_renderer *renderer, pixman_region32_t *damage,
-                     struct wm_output *output);
+                     struct wm_output *output, struct wlr_output_state *state);
 void wm_renderer_render_texture_at(struct wm_renderer *renderer,
                                    pixman_region32_t *damage,
                                    struct wlr_surface* surface,

@@ -168,7 +168,7 @@ static void handle_new_xdg_decoration(struct wl_listener* listener, void* data){
         struct wm_view* view = wm_cast(wm_view, content);
         if(!wm_view_is_xdg(view)) continue;
         struct wm_view_xdg* xdg_view = wm_cast(wm_view_xdg, view);
-        if(xdg_view->wlr_xdg_surface == wlr_deco->surface){
+        if(xdg_view->wlr_xdg_surface == wlr_deco->toplevel->base){
             wm_view_xdg_register_decoration(xdg_view, wlr_deco);
             found=true;
             break;
@@ -253,7 +253,7 @@ void wm_server_init(struct wm_server* server, struct wm_config* config){
 
     /* Compositor and protocols */
     server->wlr_compositor = 
-        wlr_compositor_create(server->wl_display, server->wm_renderer->wlr_renderer);
+        wlr_compositor_create(server->wl_display, 5, server->wm_renderer->wlr_renderer);
     assert(server->wlr_compositor);
 
     server->wlr_subcompositor = 
@@ -262,10 +262,10 @@ void wm_server_init(struct wm_server* server, struct wm_config* config){
     server->wlr_data_device_manager = wlr_data_device_manager_create(server->wl_display);
     assert(server->wlr_data_device_manager);
 
-    server->wlr_xdg_shell = wlr_xdg_shell_create(server->wl_display);
+    server->wlr_xdg_shell = wlr_xdg_shell_create(server->wl_display, 5);
     assert(server->wlr_xdg_shell);
 
-    server->wlr_layer_shell = wlr_layer_shell_v1_create(server->wl_display);
+    server->wlr_layer_shell = wlr_layer_shell_v1_create(server->wl_display, 4);
     assert(server->wlr_layer_shell);
 
     server->wlr_server_decoration_manager = wlr_server_decoration_manager_create(server->wl_display);
@@ -312,7 +312,7 @@ void wm_server_init(struct wm_server* server, struct wm_config* config){
 
 
     /* Additional headless backend for vnc */
-    server->wlr_headless_backend = wlr_headless_backend_create(server->wl_display);
+    server->wlr_headless_backend = wlr_headless_backend_create(server->wl_event_loop);
     wlr_multi_backend_add(server->wlr_backend, server->wlr_headless_backend);
 
     /* Handlers */
@@ -602,7 +602,7 @@ void wm_server_reconfigure(struct wm_server* server){
     if(server->wm_config->enable_xwayland && xcursor){
         struct wlr_xcursor_image* image = xcursor->images[0];
         wlr_xwayland_set_cursor(server->wlr_xwayland,
-                image->buffer, image->width * 4, image->width, image->height, image->hotspot_x, image->hotspot_y);
+                wlr_xcursor_image_get_buffer(image), image->hotspot_x, image->hotspot_y);
     }
 #endif
 

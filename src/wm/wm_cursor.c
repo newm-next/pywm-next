@@ -26,9 +26,9 @@ static void handle_motion(struct wl_listener* listener, void* data){
     clock_t t_msec = clock() * 1000 / CLOCKS_PER_SEC;
     cursor->msec_delta = event->time_msec - t_msec;
 
-    wlr_cursor_move(cursor->wlr_cursor, event->device, event->delta_x, event->delta_y);
+    wlr_cursor_move(cursor->wlr_cursor, &event->pointer->base, event->delta_x, event->delta_y);
     if(wm_callback_motion(event->delta_x, event->delta_y, cursor->wlr_cursor->x, cursor->wlr_cursor->y, event->time_msec)){
-        wlr_cursor_move(cursor->wlr_cursor, event->device, -event->delta_x, -event->delta_y);
+        wlr_cursor_move(cursor->wlr_cursor, &event->pointer->base, -event->delta_x, -event->delta_y);
         return;
     }
 
@@ -40,7 +40,7 @@ static void handle_motion_absolute(struct wl_listener* listener, void* data){
     struct wlr_pointer_motion_absolute_event* event = data;
 
     double lx, ly;
-    wlr_cursor_absolute_to_layout_coords(cursor->wlr_cursor, event->device, event->x, event->y, &lx, &ly);
+    wlr_cursor_absolute_to_layout_coords(cursor->wlr_cursor, &event->pointer->base, event->x, event->y, &lx, &ly);
 
     double dx = lx - cursor->wlr_cursor->x;
     double dy = ly - cursor->wlr_cursor->y;
@@ -49,7 +49,7 @@ static void handle_motion_absolute(struct wl_listener* listener, void* data){
         return;
     }
 
-    wlr_cursor_move(cursor->wlr_cursor, event->device, dx, dy);
+    wlr_cursor_move(cursor->wlr_cursor, &event->pointer->base, dx, dy);
     wm_cursor_update(cursor);
 }
 
@@ -293,12 +293,12 @@ void wm_cursor_set_image(struct wm_cursor* cursor, const char* image){
     cursor->client_image.surface = NULL;
 
     if(!cursor->cursor_visible){
-        wlr_cursor_set_image(cursor->wlr_cursor, NULL, 0, 0, 0, 0, 0, 0);
+        wlr_cursor_unset_image(cursor->wlr_cursor);
     }else{
-        wlr_xcursor_manager_set_cursor_image(
+        wlr_cursor_set_xcursor(
+                cursor->wlr_cursor,
                 cursor->wlr_xcursor_manager,
-                image,
-                cursor->wlr_cursor
+                image
         );
     }
 }
@@ -317,7 +317,7 @@ void wm_cursor_set_image_surface(struct wm_cursor* cursor, struct wlr_surface* s
     cursor->client_image.hotspot_y = hotspot_y;
 
     if(!cursor->cursor_visible){
-        wlr_cursor_set_image(cursor->wlr_cursor, NULL, 0, 0, 0, 0, 0, 0);
+        wlr_cursor_unset_image(cursor->wlr_cursor);
     }else{
         wlr_cursor_set_surface(cursor->wlr_cursor, surface, hotspot_x, hotspot_y);
     }

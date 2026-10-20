@@ -36,7 +36,10 @@ static void wm_widget_destroy(struct wm_content* super){
 
 void wm_widget_set_pixels(struct wm_widget* widget, uint32_t format, uint32_t stride, uint32_t width, uint32_t height, const void* data){
     if(widget->wlr_texture){
-        wlr_texture_write_pixels(widget->wlr_texture, stride, width, height, 0, 0, 0, 0, data);
+        /* wlr_texture_write_pixels is gone (0.16): recreate the texture */
+        wlr_texture_destroy(widget->wlr_texture);
+        widget->wlr_texture = wlr_texture_from_pixels(widget->super.wm_server->wm_renderer->wlr_renderer,
+                format, stride, width, height, data);
     }else{
         widget->wlr_texture = wlr_texture_from_pixels(widget->super.wm_server->wm_renderer->wlr_renderer,
                 format, stride, width, height, data);

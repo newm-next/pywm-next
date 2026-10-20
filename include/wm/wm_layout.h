@@ -10,6 +10,7 @@ struct wm_server;
 struct wm_view;
 struct wm_content;
 struct wm_output;
+struct wlr_surface;
 
 struct wm_layout {
     struct wm_server* wm_server;

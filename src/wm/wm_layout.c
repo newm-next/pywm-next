@@ -51,7 +51,7 @@ void wm_layout_init(struct wm_layout* layout, struct wm_server* server){
     layout->wm_server = server;
     wl_list_init(&layout->wm_outputs);
 
-    layout->wlr_output_layout = wlr_output_layout_create();
+    layout->wlr_output_layout = wlr_output_layout_create(server->wl_display);
     assert(layout->wlr_output_layout);
 
     layout->change.notify = &handle_change;
@@ -98,7 +98,8 @@ void wm_layout_damage_whole(struct wm_layout* layout){
     struct wm_output* output;
     wl_list_for_each(output, &layout->wm_outputs, link){
         DEBUG_PERFORMANCE(damage, output->key);
-        wlr_output_damage_add_whole(output->wlr_output_damage);
+        wlr_damage_ring_add_whole(&output->wlr_damage_ring);
+        wlr_output_schedule_frame(output->wlr_output);
 
         if(layout->refresh_master_output != layout->refresh_scheduled){
             layout->refresh_scheduled = output->key;
@@ -125,7 +126,8 @@ void wm_layout_damage_from(struct wm_layout* layout, struct wm_content* content,
 }
 
 void wm_layout_damage_output(struct wm_layout* layout, struct wm_output* output, pixman_region32_t* damage, struct wm_content* from){
-    wlr_output_damage_add(output->wlr_output_damage, damage);
+    wlr_damage_ring_add(&output->wlr_damage_ring, damage);
+        wlr_output_schedule_frame(output->wlr_output);
 
     struct wm_content* content;
     wl_list_for_each(content, &layout->wm_server->wm_contents, link){
