@@ -41,7 +41,7 @@ struct wm_view_xwayland {
 
     struct wl_listener request_configure;
     struct wl_listener set_parent;
-    struct wl_listener set_pid;
+    struct wl_listener associate;
     struct wl_listener map;
     struct wl_listener unmap;
     struct wl_listener destroy;

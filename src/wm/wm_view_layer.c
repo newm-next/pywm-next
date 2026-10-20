@@ -189,10 +189,10 @@ void wm_layer_subsurface_init(struct wm_layer_subsurface* subsurface, struct wm_
     wl_list_init(&subsurface->subsurfaces);
 
     subsurface->map.notify = &subsurface_handle_map;
-    wl_signal_add(&wlr_subsurface->events.map, &subsurface->map);
+    wl_signal_add(&wlr_subsurface->surface->events.map, &subsurface->map);
 
     subsurface->unmap.notify = &subsurface_handle_unmap;
-    wl_signal_add(&wlr_subsurface->events.unmap, &subsurface->unmap);
+    wl_signal_add(&wlr_subsurface->surface->events.unmap, &subsurface->unmap);
 
     subsurface->destroy.notify = &subsurface_handle_destroy;
     wl_signal_add(&wlr_subsurface->events.destroy, &subsurface->destroy);
@@ -237,10 +237,10 @@ void wm_popup_layer_init(struct wm_popup_layer* popup, struct wm_view_layer* roo
     wl_list_init(&popup->popups);
 
     popup->map.notify = &popup_handle_map;
-    wl_signal_add(&wlr_xdg_popup->base->events.map, &popup->map);
+    wl_signal_add(&wlr_xdg_popup->base->surface->events.map, &popup->map);
 
     popup->unmap.notify = &popup_handle_unmap;
-    wl_signal_add(&wlr_xdg_popup->base->events.unmap, &popup->unmap);
+    wl_signal_add(&wlr_xdg_popup->base->surface->events.unmap, &popup->unmap);
 
     popup->destroy.notify = &popup_handle_destroy;
     wl_signal_add(&wlr_xdg_popup->base->events.destroy, &popup->destroy);
@@ -303,10 +303,10 @@ void wm_view_layer_init(struct wm_view_layer* view, struct wm_server* server, st
     wl_list_init(&view->subsurfaces);
 
     view->map.notify = &handle_map;
-    wl_signal_add(&surface->events.map, &view->map);
+    wl_signal_add(&surface->surface->events.map, &view->map);
 
     view->unmap.notify = &handle_unmap;
-    wl_signal_add(&surface->events.unmap, &view->unmap);
+    wl_signal_add(&surface->surface->events.unmap, &view->unmap);
 
     view->destroy.notify = &handle_destroy;
     wl_signal_add(&surface->events.destroy, &view->destroy);

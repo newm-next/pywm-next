@@ -80,10 +80,10 @@ void wm_drag_init(struct wm_drag* drag, struct wm_seat* seat, struct wlr_drag* w
         wl_signal_add(&wlr_drag->icon->events.destroy, &drag->icon_destroy);
 
         drag->icon_map.notify = icon_handle_map;
-        wl_signal_add(&wlr_drag->icon->events.map, &drag->icon_map);
+        wl_signal_add(&wlr_drag->icon->surface->events.map, &drag->icon_map);
 
         drag->icon_unmap.notify = icon_handle_unmap;
-        wl_signal_add(&wlr_drag->icon->events.unmap, &drag->icon_unmap);
+        wl_signal_add(&wlr_drag->icon->surface->events.unmap, &drag->icon_unmap);
 
         drag->icon_surface_commit.notify = icon_handle_surface_commit;
         wl_signal_add(&wlr_drag->icon->surface->events.commit, &drag->icon_surface_commit);

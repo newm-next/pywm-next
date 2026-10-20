@@ -4,6 +4,7 @@
 #include <time.h>
 #include <wayland-server.h>
 #include <wlr/backend.h>
+#include <wlr/backend/session.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
@@ -27,6 +28,7 @@ struct wm_server{
 
     struct wlr_backend* wlr_backend;
     struct wlr_backend* wlr_headless_backend;
+    struct wlr_session* wlr_session;
 
     struct wlr_allocator* wlr_allocator;
 

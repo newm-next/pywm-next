@@ -235,8 +235,12 @@ void wm_server_init(struct wm_server* server, struct wm_config* config){
     server->wl_display = wl_display_create();
     assert(server->wl_display);
 
+    /* Event loop: wlr_backend_autocreate() needs it since 0.17 */
+    server->wl_event_loop = wl_display_get_event_loop(server->wl_display);
+
     /* Backend */
-    server->wlr_backend = wlr_backend_autocreate(server->wl_display);
+    server->wlr_backend = wlr_backend_autocreate(server->wl_event_loop,
+        &server->wlr_session);
     assert(server->wlr_backend);
 
     /* Renderer */
@@ -246,12 +250,6 @@ void wm_server_init(struct wm_server* server, struct wm_config* config){
     /* Allocator */
     server->wlr_allocator = wlr_allocator_autocreate(server->wlr_backend,
         server->wm_renderer->wlr_renderer);
-
-    /* Event loop */
-    server->wl_event_loop = 
-        wl_display_get_event_loop(server->wl_display);
-    assert(server->wl_event_loop);
-
 
     /* Compositor and protocols */
     server->wlr_compositor = 

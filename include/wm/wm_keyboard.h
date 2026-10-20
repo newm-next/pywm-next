@@ -2,6 +2,7 @@
 
 #include <wayland-server.h>
 #include <wlr/types/wlr_input_device.h>
+#include <wlr/types/wlr_keyboard.h>
 
 struct wm_seat;
 
@@ -10,6 +11,7 @@ struct wm_keyboard {
     struct wm_seat* wm_seat;
 
     struct wlr_input_device* wlr_input_device;
+    struct wlr_keyboard* wlr_keyboard;
 
     struct wl_listener destroy;
     struct wl_listener key;
