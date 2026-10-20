@@ -288,7 +288,7 @@ void wm_seat_dispatch_button(struct wm_seat* seat, struct wlr_pointer_button_eve
 
     wlr_seat_pointer_notify_button(seat->wlr_seat, event->time_msec, event->button, event->state);
 
-    if(surface && event->state == WLR_BUTTON_PRESSED){
+    if(surface && event->state == WL_POINTER_BUTTON_STATE_PRESSED){
         double x = seat->wm_cursor->wlr_cursor->x;
         double y = seat->wm_cursor->wlr_cursor->y;
         seat->seatop_down.xm = 1. / scale_x;
