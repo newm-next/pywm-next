@@ -20,7 +20,11 @@ probe=$builddir/lifecycle-probe
 log=$builddir/lifecycle-probe.log
 
 cd "$root"
-. "$root/../env/env.sh" 2>/dev/null || true
+root=$(pwd)   # absolute, the protocol XML paths below are built from it
+# dash aborts on '.' with a missing file, even with '|| true': test first.
+if [ -f "$root/../env/env.sh" ]; then
+	. "$root/../env/env.sh"
+fi
 
 echo "== configure ($builddir, xwayland disabled)"
 if [ -f "$builddir/build.ninja" ]; then
@@ -95,22 +99,56 @@ while [ ! -S "$runtime/wayland-0" ]; do
 done
 
 echo "== run probe"
-WAYLAND_DISPLAY=wayland-0 "$probe"
-probe_rc=$?
+# set -e would abort on the probe's non-zero status; capture it instead
+probe_rc=0
+WAYLAND_DISPLAY=wayland-0 "$probe" > "$log.probe" 2>&1 || probe_rc=$?
+cat "$log.probe"
 
 sleep 0.3
-if ! kill -0 $pid 2>/dev/null; then
-	echo ""
+alive=0
+kill -0 $pid 2>/dev/null && alive=1
+
+# exit status of the compositor, if it is already gone
+comp_status=""
+if [ $alive -eq 0 ]; then
+	comp_status=0
+	wait $pid 2>/dev/null || comp_status=$?
+	case $comp_status in
+		134) comp_status="134 (SIGABRT: assertion failed)";;
+		139) comp_status="139 (SIGSEGV)";;
+	esac
+fi
+
+# the step that was running when the connection dropped
+step=$(sed -n 's/.*step \([0-9]*\) (\(.*\)): connection lost.*/\1 (\2)/p' "$log.probe" 2>/dev/null | tail -1)
+assertion=$(grep -m1 -E "Assertion|assertion" "$log" 2>/dev/null || true)
+
+echo ""
+if [ $alive -eq 0 ]; then
 	echo "RESULT: FAIL - the compositor died"
-	echo "last lines of $log:"
+	[ -n "$step" ] && echo "  during step: $step"
+	echo "  exit status: ${comp_status:-unknown}"
+	[ -n "$assertion" ] && echo "  $assertion"
+	echo "  last lines of $log:"
 	tail -5 "$log" | sed 's/^/    /'
 	exit 1
 fi
 
+if [ $probe_rc -eq 3 ]; then
+	echo "RESULT: FAIL - client lost the connection, the compositor is still alive"
+	[ -n "$step" ] && echo "  during step: $step"
+	echo "  this is a protocol error on the client side or a compositor that closed it"
+	grep -m3 -E "error [0-9]+:" "$log.probe" 2>/dev/null | sed 's/^/    /' || true
+	exit 1
+fi
+
+if [ $probe_rc -eq 4 ]; then
+	echo "RESULT: FAIL - the compositor did not send a configure when expected"
+	exit 1
+fi
+
 if [ $probe_rc -ne 0 ]; then
-	echo ""
 	echo "RESULT: FAIL - probe exited $probe_rc"
-	tail -5 "$log" | sed 's/^/    /'
 	exit 1
 fi
 

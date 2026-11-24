@@ -102,7 +102,10 @@ static void begin(const char *name) {
 
 static int roundtrip(void) {
 	if (wl_display_roundtrip(display) < 0) {
-		fprintf(stderr, "step %d (%s): display error -> compositor is gone\n",
+		/* Do not guess: the connection can be lost because the compositor
+		 * died, or because the compositor closed us on a protocol error.
+		 * run-headless-probe.sh tells the two apart by looking at the pid. */
+		fprintf(stderr, "step %d (%s): connection lost (PROBE_CONNECTION_LOST)\n",
 			step_no, step_name);
 		return -1;
 	}
@@ -166,23 +169,23 @@ int main(void) {
 		zxdg_toplevel_decoration_v1_set_mode(deco,
 			ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
 	}
-	if (roundtrip()) return 1;
+	if (roundtrip()) return 3;
 
 	/* --- first commit: no buffer allowed, it only asks for a configure -- */
 	begin("first commit (no buffer: initial configure requested)");
 	wl_surface_commit(surface);
-	if (roundtrip()) return 1;
+	if (roundtrip()) return 3;
 
 	/* --- now the window can really map --------------------------------- */
 	begin("buffer attached, window maps");
 	struct buffer buf = make_buffer(200, 120);
 	if (!configured) {
-		fprintf(stderr, "step %d: no configure received before mapping\n", step_no);
-		return 1;
+		fprintf(stderr, "step %d: no configure received before mapping (PROBE_NO_CONFIGURE)\n", step_no);
+		return 4;
 	}
 	wl_surface_attach(surface, buf.wl, 0, 0);
 	wl_surface_commit(surface);
-	if (roundtrip()) return 1;
+	if (roundtrip()) return 3;
 
 	/* --- popup --------------------------------------------------------- */
 	begin("popup created on the window");
@@ -197,39 +200,39 @@ int main(void) {
 	xdg_positioner_destroy(pos);
 	/* same rule as a toplevel: the first commit carries no buffer */
 	wl_surface_commit(psurf);
-	if (roundtrip()) return 1;
+	if (roundtrip()) return 3;
 	begin("popup buffer attached");
 	struct buffer pbuf = make_buffer(120, 80);
 	wl_surface_attach(psurf, pbuf.wl, 0, 0);
 	wl_surface_commit(psurf);
-	if (roundtrip()) return 1;
+	if (roundtrip()) return 3;
 
 	/* --- popup destroyed on its own ------------------------------------ */
 	begin("popup destroyed");
 	xdg_popup_destroy(popup);
 	xdg_surface_destroy(pxs);
 	wl_surface_destroy(psurf);
-	if (roundtrip()) return 1;
+	if (roundtrip()) return 3;
 
 	/* --- unmap / remap -------------------------------------------------- */
 	begin("window unmapped (NULL buffer commit)");
 	wl_surface_attach(surface, NULL, 0, 0);
 	wl_surface_commit(surface);
-	if (roundtrip()) return 1;
+	if (roundtrip()) return 3;
 
 	begin("window mapped again (configure, then buffer)");
 	configured = 0;
 	wl_surface_commit(surface);
-	if (roundtrip()) return 1;
+	if (roundtrip()) return 3;
 	if (!configured) {
-		fprintf(stderr, "step %d: no configure after unmap\n", step_no);
-		return 1;
+		fprintf(stderr, "step %d: no configure after unmap (PROBE_NO_CONFIGURE)\n", step_no);
+		return 4;
 	}
 	wl_surface_attach(surface, buf.wl, 0, 0);
 	wl_surface_commit(surface);
 	if (wl_display_roundtrip(display) < 0) {
 		fprintf(stderr, "step %d (%s): display error -> compositor is gone\n", step_no, step_name);
-		return 1;
+		return 3;
 	}
 
 	/* --- window destroyed ---------------------------------------------- */
@@ -242,7 +245,7 @@ int main(void) {
 	xdg_toplevel_destroy(tl);
 	xdg_surface_destroy(xs);
 	wl_surface_destroy(surface);
-	if (roundtrip()) return 1;
+	if (roundtrip()) return 3;
 
 	/* --- layer-shell surface (the panel) ------------------------------- */
 	if (layer_shell) {
@@ -256,15 +259,15 @@ int main(void) {
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
 		/* a layer surface also needs its configure before any buffer */
 		wl_surface_commit(lsurf);
-		if (roundtrip()) return 1;
+		if (roundtrip()) return 3;
 		struct buffer lbuf = make_buffer(300, 30);
 		wl_surface_attach(lsurf, lbuf.wl, 0, 0);
 		wl_surface_commit(lsurf);
-		if (roundtrip()) return 1;
+		if (roundtrip()) return 3;
 		begin("layer-shell surface destroyed");
 		zwlr_layer_surface_v1_destroy(ls);
 		wl_surface_destroy(lsurf);
-		if (roundtrip()) return 1;
+		if (roundtrip()) return 3;
 	} else {
 		printf("note: no layer-shell global, panel path not exercised\n");
 	}
