@@ -25,6 +25,8 @@ static void handle_destroy(struct wl_listener* listener, void* data){
 void wm_pointer_init(struct wm_pointer* pointer, struct wm_seat* seat, struct wlr_input_device* input_device){
     pointer->wm_seat = seat;
     pointer->wlr_input_device = input_device;
+    pointer->wlr_pointer = wlr_pointer_from_input_device(input_device);
+    assert(pointer->wlr_pointer);
 
     wm_pointer_reconfigure(pointer);
 

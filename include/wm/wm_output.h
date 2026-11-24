@@ -3,7 +3,7 @@
 
 #include <wayland-server.h>
 #include <wlr/types/wlr_output.h>
-#include <wlr/types/wlr_output_damage.h>
+#include <wlr/types/wlr_damage_ring.h>
 
 struct wm_layout;
 struct wm_renderer_buffers;
@@ -19,14 +19,19 @@ struct wm_output {
     int key; // Unique key in a layout - update on layout change
 
     struct wlr_output* wlr_output;
-    struct wlr_output_damage* wlr_output_damage;
+
+    /* wlroots >= 0.17: wlr_output_damage was removed, the damage ring lives
+     * on the compositor side and the frame signal comes from the output. */
+    struct wlr_damage_ring damage_ring;
+
+    /* Pending state used while rendering and committing a frame. */
+    struct wlr_output_state render_state;
 
     struct wl_listener destroy;
     struct wl_listener commit;
     struct wl_listener mode;
     struct wl_listener present;
-    struct wl_listener damage_frame;
-    struct wl_listener damage_destroy;
+    struct wl_listener frame;
 
     bool expecting_frame;
     struct timespec last_frame;

@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/render/wlr_renderer.h>
+#include <wlr/render/pass.h>
 #include <pixman.h>
 
 
@@ -108,6 +109,13 @@ struct wm_renderer {
 
     enum wm_renderer_mode mode;
 
+    /* wlroots >= 0.17: rendering goes through an explicit render pass and the
+     * EGL context is only guaranteed current while a pass is open. */
+    struct wlr_render_pass* pass;
+    unsigned int output_fbo;      /* FBO of the buffer currently being painted */
+    int output_width;
+    int output_height;
+
 #ifdef WM_CUSTOM_RENDERER
     int n_texture_shaders;
     struct wm_renderer_texture_shaders* texture_shaders;
@@ -180,7 +188,7 @@ bool wm_renderer_check_primitive_params(struct wm_renderer* renderer, int n_int,
 
 void wm_renderer_to_buffer(struct wm_renderer* renderer, unsigned int buffer);
 
-void wm_renderer_begin(struct wm_renderer *renderer, struct wm_output *output);
+bool wm_renderer_begin(struct wm_renderer *renderer, struct wm_output *output);
 void wm_renderer_end(struct wm_renderer *renderer, pixman_region32_t *damage,
                      struct wm_output *output);
 void wm_renderer_render_texture_at(struct wm_renderer *renderer,

@@ -11,6 +11,7 @@
 #include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_virtual_pointer_v1.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
+#include <wlr/types/wlr_gamma_control_v1.h>
 
 struct wm_config;
 struct wm_seat;
@@ -27,6 +28,7 @@ struct wm_server{
 
     struct wlr_backend* wlr_backend;
     struct wlr_backend* wlr_headless_backend;
+    struct wlr_session* wlr_session;
 
     struct wlr_allocator* wlr_allocator;
 
@@ -43,6 +45,7 @@ struct wm_server{
     struct wlr_virtual_keyboard_manager_v1* wlr_virtual_keyboard_manager;
     struct wlr_virtual_pointer_manager_v1* wlr_virtual_pointer_manager;
     struct wlr_layer_shell_v1* wlr_layer_shell;
+    struct wlr_gamma_control_manager_v1* wlr_gamma_control_manager;
 
     struct wm_renderer* wm_renderer;
     struct wm_seat* wm_seat;
@@ -59,6 +62,7 @@ struct wm_server{
     struct wl_listener new_xdg_surface;
     struct wl_listener new_layer_surface;
     struct wl_listener new_server_decoration;
+    struct wl_listener gamma_set;
     struct wl_listener new_xdg_decoration;
     struct wl_listener xwayland_ready;
     struct wl_listener new_xwayland_surface;

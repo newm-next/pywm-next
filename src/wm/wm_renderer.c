@@ -6,8 +6,11 @@
 #include <string.h>
 #include <wayland-server.h>
 #include <wlr/render/wlr_renderer.h>
-#include <wlr/types/wlr_matrix.h>
+#include <wlr/render/wlr_texture.h>
+#include <wlr/types/wlr_output.h>
 #include <wlr/util/log.h>
+#include <wlr/util/transform.h>
+#include "wm/wm_matrix.h"
 
 #include "wm/wm_output.h"
 #include "wm/wm_renderer.h"
@@ -343,13 +346,17 @@ static bool render_subtexture_with_matrix(
         abort();
     }
 
+    float projection[9];
+    wm_matrix_projection(projection, renderer->output_width,
+                         renderer->output_height, WL_OUTPUT_TRANSFORM_NORMAL);
+
     float gl_matrix[9];
-    wlr_matrix_multiply(gl_matrix, gles2_renderer->projection, matrix);
-    wlr_matrix_multiply(gl_matrix, flip_180, gl_matrix);
+    wm_matrix_multiply(gl_matrix, projection, matrix);
+    wm_matrix_multiply(gl_matrix, flip_180, gl_matrix);
 
     // OpenGL ES 2 requires the glUniformMatrix3fv transpose parameter to be set
     // to GL_FALSE
-    wlr_matrix_transpose(gl_matrix, gl_matrix);
+    wm_matrix_transpose(gl_matrix, gl_matrix);
 
     push_gles2_debug(gles2_renderer);
 
@@ -419,13 +426,17 @@ static void render_primitive_with_matrix(
     struct wlr_gles2_renderer *gles2_renderer =
         gles2_get_renderer(renderer->wlr_renderer);
 
+    float projection[9];
+    wm_matrix_projection(projection, renderer->output_width,
+                         renderer->output_height, WL_OUTPUT_TRANSFORM_NORMAL);
+
     float gl_matrix[9];
-    wlr_matrix_multiply(gl_matrix, gles2_renderer->projection, matrix);
-    wlr_matrix_multiply(gl_matrix, flip_180, gl_matrix);
+    wm_matrix_multiply(gl_matrix, projection, matrix);
+    wm_matrix_multiply(gl_matrix, flip_180, gl_matrix);
 
     // OpenGL ES 2 requires the glUniformMatrix3fv transpose parameter to be set
     // to GL_FALSE
-    wlr_matrix_transpose(gl_matrix, gl_matrix);
+    wm_matrix_transpose(gl_matrix, gl_matrix);
 
     push_gles2_debug(gles2_renderer);
 
@@ -482,7 +493,7 @@ void wm_renderer_init(struct wm_renderer *renderer, struct wm_server *server) {
     if(wlr_renderer_is_gles2(renderer->wlr_renderer)){
 
         struct wlr_gles2_renderer *gles2_renderer = gles2_get_renderer(renderer->wlr_renderer);
-        assert(wlr_egl_make_current(gles2_renderer->egl));
+        assert(wlr_egl_make_current(gles2_renderer->egl, NULL));
         wm_texture_shaders_init(renderer);
         wm_primitive_shaders_init(renderer);
         wm_renderer_init_quad_shaders(renderer);
@@ -510,7 +521,7 @@ void wm_renderer_buffers_init(struct wm_renderer_buffers* buffers, struct wm_ren
     wlr_log(WLR_DEBUG, "Initialising renderer buffers for output: %dx%d", width, height);
 
     struct wlr_gles2_renderer *gles2_renderer = gles2_get_renderer(renderer->wlr_renderer);
-    assert(wlr_egl_make_current(gles2_renderer->egl));
+    assert(wlr_egl_make_current(gles2_renderer->egl, NULL));
 
     glGenFramebuffers(1, &buffers->frame_buffer);
     glGenTextures(1, &buffers->frame_buffer_tex);
@@ -567,7 +578,7 @@ void wm_renderer_buffers_destroy(struct wm_renderer_buffers* buffers){
     wlr_log(WLR_DEBUG, "Freeing renderer buffers for output: %dx%d", buffers->width, buffers->height);
 
     struct wlr_gles2_renderer *r = gles2_get_renderer(buffers->parent->wlr_renderer);
-    assert(wlr_egl_make_current(r->egl));
+    assert(wlr_egl_make_current(r->egl, NULL));
 
     glDeleteFramebuffers(1, &buffers->frame_buffer);
     glDeleteRenderbuffers(1, &buffers->frame_buffer_rbo);
@@ -607,15 +618,30 @@ void wm_renderer_destroy(struct wm_renderer *renderer) {
 }
 
 static void wm_renderer_scissor(struct wm_renderer* renderer, struct wlr_box* box){
-    wlr_renderer_scissor(renderer->wlr_renderer, box);
+#ifdef WM_CUSTOM_RENDERER
+    if(renderer->mode != WM_RENDERER_WLR){
+        /* wlroots 0.17 dropped wlr_renderer_scissor: the custom pipeline drives
+         * GL directly, so the scissor is set here. Same y-flip as before. */
+        if(box && box->width > 0 && box->height > 0){
+            glEnable(GL_SCISSOR_TEST);
+            glScissor(box->x, renderer->output_height - box->y - box->height,
+                      box->width, box->height);
+        }else{
+            glDisable(GL_SCISSOR_TEST);
+        }
+        return;
+    }
+#endif
+    /* WLR mode: clipping is passed per draw through the render pass options */
+    (void)renderer;
+    (void)box;
 }
 
 void wm_renderer_to_buffer(struct wm_renderer* renderer, unsigned int buffer){
 #ifdef WM_CUSTOM_RENDERER
     if(renderer->mode == WM_RENDERER_PYWM){
         if(buffer == 0){
-            struct wlr_gles2_renderer *gles2_renderer = gles2_get_renderer(renderer->wlr_renderer);
-            glBindFramebuffer(GL_FRAMEBUFFER, gles2_renderer->current_buffer->fbo);
+            glBindFramebuffer(GL_FRAMEBUFFER, renderer->output_fbo);
         }else{
             glBindFramebuffer(GL_FRAMEBUFFER, renderer->current->renderer_buffers->frame_buffer);
         }
@@ -624,22 +650,38 @@ void wm_renderer_to_buffer(struct wm_renderer* renderer, unsigned int buffer){
 #endif
 }
 
-void wm_renderer_begin(struct wm_renderer *renderer, struct wm_output *output) {
+bool wm_renderer_begin(struct wm_renderer *renderer, struct wm_output *output) {
     renderer->current = output;
+
+    /* wlroots >= 0.17: acquire the output buffer and open an explicit pass */
+    wlr_output_state_init(&output->render_state);
+    struct wlr_buffer_pass_options options = { 0 };
+    renderer->pass = wlr_output_begin_render_pass(output->wlr_output,
+            &output->render_state, &options);
+    if(!renderer->pass){
+        wlr_output_state_finish(&output->render_state);
+        renderer->current = NULL;
+        return false;
+    }
+
+    renderer->output_width = output->render_state.buffer->width;
+    renderer->output_height = output->render_state.buffer->height;
 
 #ifdef WM_CUSTOM_RENDERER
     if(renderer->mode == WM_RENDERER_PYWM){
         wm_renderer_buffers_ensure(renderer, output);
         struct wlr_gles2_renderer *gles2_renderer = gles2_get_renderer(renderer->wlr_renderer);
-        assert(wlr_egl_make_current(gles2_renderer->egl));
+        renderer->output_fbo = wlr_gles2_renderer_get_buffer_fbo(
+                renderer->wlr_renderer, output->render_state.buffer);
+        assert(wlr_egl_make_current(gles2_renderer->egl, NULL));
     }
 #endif
-
-    wlr_renderer_begin(renderer->wlr_renderer, output->wlr_output->width, output->wlr_output->height);
 
 #ifdef WM_CUSTOM_RENDERER
     wm_renderer_to_buffer(renderer, 0);
 #endif
+
+    return true;
 }
 
 #ifdef WM_CUSTOM_RENDERER
@@ -668,7 +710,7 @@ static void blit_framebuffer(struct wm_renderer* renderer, pixman_region32_t* da
         wlr_output_transform_invert(renderer->current->wlr_output->transform);
 
     if(!damage){
-        wlr_renderer_scissor(renderer->wlr_renderer, NULL);
+        wm_renderer_scissor(renderer, NULL);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     }else{
         int nrects;
@@ -681,7 +723,7 @@ static void blit_framebuffer(struct wm_renderer* renderer, pixman_region32_t* da
 
 
             wlr_box_transform(&damage_box, &damage_box, transform, ow, oh);
-            wlr_renderer_scissor(renderer->wlr_renderer, &damage_box);
+            wm_renderer_scissor(renderer, &damage_box);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         }
     }
@@ -704,9 +746,11 @@ void wm_renderer_end(struct wm_renderer *renderer, pixman_region32_t *damage,
     }
 #endif
 
-    wlr_renderer_scissor(renderer->wlr_renderer, NULL);
-    wlr_output_render_software_cursors(output->wlr_output, damage);
-    wlr_renderer_end(renderer->wlr_renderer);
+    wm_renderer_scissor(renderer, NULL);
+    wlr_output_add_software_cursors_to_render_pass(output->wlr_output,
+            renderer->pass, damage);
+    wlr_render_pass_submit(renderer->pass);
+    renderer->pass = NULL;
 
     renderer->current = NULL;
 }
@@ -725,9 +769,12 @@ void wm_renderer_render_texture_at(struct wm_renderer *renderer,
     enum wl_output_transform transform =
         wlr_output_transform_invert(renderer->current->wlr_output->transform);
 
+    float transform_matrix[9];
+    wm_matrix_projection(transform_matrix, renderer->current->wlr_output->width,
+                         renderer->current->wlr_output->height,
+                         renderer->current->wlr_output->transform);
     float matrix[9];
-    wlr_matrix_project_box(matrix, box, WL_OUTPUT_TRANSFORM_NORMAL, 0,
-                           renderer->current->wlr_output->transform_matrix);
+    wm_matrix_project_box(matrix, box, WL_OUTPUT_TRANSFORM_NORMAL, transform_matrix);
 
     struct wlr_fbox fbox;
     if(surface){
@@ -765,8 +812,24 @@ void wm_renderer_render_texture_at(struct wm_renderer *renderer,
 #endif
 
         if(renderer->mode == WM_RENDERER_WLR){
-            wlr_render_subtexture_with_matrix(renderer->wlr_renderer, texture,
-                                              &fbox, matrix, opacity);
+            /* Render pass API: dst_box is in buffer coordinates, so use the
+             * transformed intersection and keep NORMAL as source transform. */
+            float alpha = opacity;
+            pixman_region32_t clip;
+            pixman_region32_init_rect(&clip, inters.x, inters.y,
+                                      inters.width, inters.height);
+            struct wlr_render_texture_options options = {
+                .texture = texture,
+                .src_box = fbox,
+                .dst_box = inters,
+                .alpha = &alpha,
+                .clip = &clip,
+                .transform = WL_OUTPUT_TRANSFORM_NORMAL,
+                .filter_mode = WLR_SCALE_FILTER_BILINEAR,
+                .blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED,
+            };
+            wlr_render_pass_add_texture(renderer->pass, &options);
+            pixman_region32_fini(&clip);
         }
 
     }
@@ -784,9 +847,12 @@ void wm_renderer_render_primitive(struct wm_renderer* renderer,
         wlr_output_transform_invert(renderer->current->wlr_output->transform);
 
 #ifdef WM_CUSTOM_RENDERER
+    float transform_matrix[9];
+    wm_matrix_projection(transform_matrix, renderer->current->wlr_output->width,
+                         renderer->current->wlr_output->height,
+                         renderer->current->wlr_output->transform);
     float matrix[9];
-    wlr_matrix_project_box(matrix, box, WL_OUTPUT_TRANSFORM_NORMAL, 0,
-                           renderer->current->wlr_output->transform_matrix);
+    wm_matrix_project_box(matrix, box, WL_OUTPUT_TRANSFORM_NORMAL, transform_matrix);
 
     struct wlr_fbox fbox = {
         .x = 0,
@@ -818,7 +884,17 @@ void wm_renderer_render_primitive(struct wm_renderer* renderer,
         }
 #endif
         if(renderer->mode == WM_RENDERER_WLR){
-            wlr_render_rect(renderer->wlr_renderer, box, (float[]){0.0, 0.0, 0.0, 0.2}, renderer->current->wlr_output->transform_matrix);
+            pixman_region32_t clip;
+            pixman_region32_init_rect(&clip, inters.x, inters.y,
+                                      inters.width, inters.height);
+            struct wlr_render_rect_options options = {
+                .box = inters,
+                .color = { .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.2f },
+                .clip = &clip,
+                .blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED,
+            };
+            wlr_render_pass_add_rect(renderer->pass, &options);
+            pixman_region32_fini(&clip);
         }
     }
 }
@@ -1070,13 +1146,15 @@ void wm_renderer_clear(struct wm_renderer* renderer, pixman_region32_t* damage, 
             .width = rects[i].x2 - rects[i].x1,
             .height = rects[i].y2 - rects[i].y1
          };
-        float matrix[9];
-        wlr_matrix_project_box(matrix, &damage_box,
-                WL_OUTPUT_TRANSFORM_NORMAL, 0,
-                renderer->current->wlr_output->transform_matrix);
-        wlr_render_rect(
-                renderer->wlr_renderer,
-                &damage_box, color, renderer->current->wlr_output->transform_matrix);
+        float alpha = color[3];
+        struct wlr_render_rect_options options = {
+            .box = damage_box,
+            /* wlroots 0.20 expects premultiplied channels */
+            .color = { .r = color[0] * alpha, .g = color[1] * alpha,
+                       .b = color[2] * alpha, .a = alpha },
+            .blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED,
+        };
+        wlr_render_pass_add_rect(renderer->pass, &options);
     }
 }
 
