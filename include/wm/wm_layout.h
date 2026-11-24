@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <wayland-server.h>
+#include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 

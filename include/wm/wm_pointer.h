@@ -11,6 +11,7 @@ struct wm_pointer {
     struct wm_seat* wm_seat;
 
     struct wlr_input_device* wlr_input_device;
+    struct wlr_pointer* wlr_pointer;
 
     struct wl_listener destroy;
 };

@@ -168,7 +168,7 @@ static void handle_new_xdg_decoration(struct wl_listener* listener, void* data){
         struct wm_view* view = wm_cast(wm_view, content);
         if(!wm_view_is_xdg(view)) continue;
         struct wm_view_xdg* xdg_view = wm_cast(wm_view_xdg, view);
-        if(xdg_view->wlr_xdg_surface == wlr_deco->surface){
+        if(xdg_view->wlr_xdg_surface->toplevel == wlr_deco->toplevel){
             wm_view_xdg_register_decoration(xdg_view, wlr_deco);
             found=true;
             break;
@@ -183,6 +183,31 @@ static void handle_new_xdg_decoration(struct wl_listener* listener, void* data){
                 WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
     }
 
+}
+
+static void handle_gamma_set(struct wl_listener* listener, void* data){
+    struct wm_server* server = wl_container_of(listener, server, gamma_set);
+    struct wlr_gamma_control_manager_v1_set_gamma_event* event = data;
+
+    /*
+     * wlroots 0.17 removed wlr_output_set_gamma(): the LUT is now applied by
+     * the compositor through struct wlr_output_state on the next commit.
+     * Same behaviour as the implicit apply pywm used to get for free.
+     */
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    if(!event->control || !wlr_gamma_control_v1_apply(event->control, &state)){
+        wlr_output_state_finish(&state);
+        if(event->control){
+            wlr_gamma_control_v1_send_failed_and_destroy(event->control);
+        }
+        return;
+    }
+
+    if(!wlr_output_commit_state(event->output, &state)){
+        wlr_gamma_control_v1_send_failed_and_destroy(event->control);
+    }
+    wlr_output_state_finish(&state);
 }
 
 static void handle_ready(struct wl_listener* listener, void* data){
@@ -235,8 +260,15 @@ void wm_server_init(struct wm_server* server, struct wm_config* config){
     server->wl_display = wl_display_create();
     assert(server->wl_display);
 
+    /* Event loop (needed by the backend in wlroots 0.20) */
+    server->wl_event_loop =
+        wl_display_get_event_loop(server->wl_display);
+    assert(server->wl_event_loop);
+
     /* Backend */
-    server->wlr_backend = wlr_backend_autocreate(server->wl_display);
+    server->wlr_session = NULL;
+    server->wlr_backend = wlr_backend_autocreate(server->wl_event_loop,
+        &server->wlr_session);
     assert(server->wlr_backend);
 
     /* Renderer */
@@ -247,15 +279,10 @@ void wm_server_init(struct wm_server* server, struct wm_config* config){
     server->wlr_allocator = wlr_allocator_autocreate(server->wlr_backend,
         server->wm_renderer->wlr_renderer);
 
-    /* Event loop */
-    server->wl_event_loop = 
-        wl_display_get_event_loop(server->wl_display);
-    assert(server->wl_event_loop);
-
 
     /* Compositor and protocols */
     server->wlr_compositor = 
-        wlr_compositor_create(server->wl_display, server->wm_renderer->wlr_renderer);
+        wlr_compositor_create(server->wl_display, 5, server->wm_renderer->wlr_renderer);
     assert(server->wlr_compositor);
 
     server->wlr_subcompositor = 
@@ -264,10 +291,10 @@ void wm_server_init(struct wm_server* server, struct wm_config* config){
     server->wlr_data_device_manager = wlr_data_device_manager_create(server->wl_display);
     assert(server->wlr_data_device_manager);
 
-    server->wlr_xdg_shell = wlr_xdg_shell_create(server->wl_display);
+    server->wlr_xdg_shell = wlr_xdg_shell_create(server->wl_display, 5);
     assert(server->wlr_xdg_shell);
 
-    server->wlr_layer_shell = wlr_layer_shell_v1_create(server->wl_display);
+    server->wlr_layer_shell = wlr_layer_shell_v1_create(server->wl_display, 4);
     assert(server->wlr_layer_shell);
 
     server->wlr_server_decoration_manager = wlr_server_decoration_manager_create(server->wl_display);
@@ -279,12 +306,23 @@ void wm_server_init(struct wm_server* server, struct wm_config* config){
     wlr_screencopy_manager_v1_create(server->wl_display);
     wlr_data_control_manager_v1_create(server->wl_display);
     wlr_primary_selection_v1_device_manager_create(server->wl_display);
-    wlr_gamma_control_manager_v1_create(server->wl_display);
+    server->wlr_gamma_control_manager =
+        wlr_gamma_control_manager_v1_create(server->wl_display);
+    assert(server->wlr_gamma_control_manager);
+
+    server->gamma_set.notify = handle_gamma_set;
+    wl_signal_add(&server->wlr_gamma_control_manager->events.set_gamma,
+                  &server->gamma_set);
     wlr_viewporter_create(server->wl_display);
 
 #ifdef WM_HAS_XWAYLAND
     server->wlr_xwayland = NULL;
     if(config->enable_xwayland){
+        /* Xwayland picks up the cursor theme from the environment at startup.
+         * wlroots 0.17 removed the public xcursor -> wlr_buffer helper that
+         * wlr_xwayland_set_cursor() used to take, so the theme is passed here
+         * instead of setting the root-window cursor image by hand. */
+        setenv("XCURSOR_THEME", config->xcursor_theme, 0);
         server->wlr_xwayland = wlr_xwayland_create(server->wl_display, server->wlr_compositor, false);
         assert(server->wlr_xwayland);
     }
@@ -314,7 +352,7 @@ void wm_server_init(struct wm_server* server, struct wm_config* config){
 
 
     /* Additional headless backend for vnc */
-    server->wlr_headless_backend = wlr_headless_backend_create(server->wl_display);
+    server->wlr_headless_backend = wlr_headless_backend_create(server->wl_event_loop);
     wlr_multi_backend_add(server->wlr_backend, server->wlr_headless_backend);
 
     /* Handlers */
@@ -599,13 +637,6 @@ void wm_server_reconfigure(struct wm_server* server){
     server->wlr_xcursor_manager = wlr_xcursor_manager_create(server->wm_config->xcursor_theme, server->wm_config->xcursor_size);
     assert(server->wlr_xcursor_manager);
 
-#ifdef WM_HAS_XWAYLAND
-    struct wlr_xcursor* xcursor = wlr_xcursor_manager_get_xcursor(server->wlr_xcursor_manager, "left_ptr", 1);
-    if(server->wm_config->enable_xwayland && xcursor){
-        struct wlr_xcursor_image* image = xcursor->images[0];
-        wlr_xwayland_set_cursor(server->wlr_xwayland,
-                image->buffer, image->width * 4, image->width, image->height, image->hotspot_x, image->hotspot_y);
-    }
-#endif
+
 
 }

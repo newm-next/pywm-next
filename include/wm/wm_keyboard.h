@@ -10,6 +10,7 @@ struct wm_keyboard {
     struct wm_seat* wm_seat;
 
     struct wlr_input_device* wlr_input_device;
+    struct wlr_keyboard* wlr_keyboard;
 
     struct wl_listener destroy;
     struct wl_listener key;

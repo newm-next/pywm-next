@@ -35,12 +35,13 @@ static void wm_widget_destroy(struct wm_content* super){
 }
 
 void wm_widget_set_pixels(struct wm_widget* widget, uint32_t format, uint32_t stride, uint32_t width, uint32_t height, const void* data){
+    /* wlroots 0.17 removed wlr_texture_write_pixels: the only public way to
+     * upload client-side pixels is to (re)create the texture. */
     if(widget->wlr_texture){
-        wlr_texture_write_pixels(widget->wlr_texture, stride, width, height, 0, 0, 0, 0, data);
-    }else{
-        widget->wlr_texture = wlr_texture_from_pixels(widget->super.wm_server->wm_renderer->wlr_renderer,
-                format, stride, width, height, data);
+        wlr_texture_destroy(widget->wlr_texture);
     }
+    widget->wlr_texture = wlr_texture_from_pixels(widget->super.wm_server->wm_renderer->wlr_renderer,
+            format, stride, width, height, data);
     wm_widget_set_primitive(widget, NULL, 0, NULL, 0, NULL);
 
     wm_layout_damage_from(widget->super.wm_server->wm_layout, &widget->super, NULL);
