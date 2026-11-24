@@ -16,6 +16,41 @@ Avant de commencer :
 `$HOME/.cache/newm/newm_log` doit contenir les lignes de démarrage de pywm sans
 `ERROR`. Gardez ce fichier : en cas de problème, c'est la pièce à joindre.
 
+## 0. Sonde sans GPU (à lancer avant de toucher la session)
+
+Tout ce qui suit se joue à l'écran, sauf cette étape : `dev/run-headless-probe.sh`
+démarre un pywm sans carte graphique (`WLR_BACKENDS=headless WLR_RENDERER=pixman`)
+et lui envoie un client qui parcourt le cycle de vie des surfaces. Aucune session
+réelle n'est nécessaire, donc une régression est détectée avant de risquer
+l'écran.
+
+```sh
+dev/run-headless-probe.sh          # ou : dev/run-headless-probe.sh <arbre> <builddir>
+```
+
+La sonde déroule, dans l'ordre, avec un aller-retour à chaque étape : décoration
+demandée avant le premier commit, premier commit, création d'un popup,
+destruction du popup, fenêtre masquée puis réaffichée, destruction de la
+fenêtre, création/configuration/destruction d'un panneau layer-shell,
+déconnexion. Elle affiche une ligne par étape et le script ne rend 0 que si le
+compositeur est encore vivant à la fin.
+
+| Dernière ligne affichée | Chemin en cause |
+|---|---|
+| `step 1` | décoration envoyée avant l'initialisation de la surface |
+| `step 3` | positionnement du popup hors premier commit |
+| `step 5` | état rejoué au mauvais moment après un masquer/réafficher |
+| `step 6` | listeners non retirés à la destruction de la fenêtre |
+| `step 7` | idem pour le panneau (layer-shell) |
+
+Un échec à l'étape 6 ou 7 s'accompagne d'une assertion de wlroots dans le
+journal (`destroy_xdg_toplevel` / `destroy_xdg_surface`), c'est le signe que le
+retrait des listeners n'a pas eu lieu au bon moment.
+
+Cette sonde ne remplace pas le test matériel : elle ne rend rien à l'écran et
+n'exerce ni Xwayland (désactivé dans ce build de test), ni le rendu, ni les
+entrées.
+
 ## Ordre de test
 
 Trois étapes, dans cet ordre : chacune exerce un code différent du portage, et
