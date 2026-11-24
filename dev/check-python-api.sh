@@ -105,6 +105,60 @@ else
 	note "ok   scroll: delta_discrete converted from v120 to whole notches"
 fi
 
+# --- xdg configure guard -------------------------------------------------
+# Every wlr_xdg_toplevel_set_*() / wlr_xdg_surface_schedule_configure() ends in
+# schedule_configure(), which asserts surface->initialized. A surface loses that
+# flag when it is unmapped, so each call must either sit behind an
+# "initialized" test or run from the initial_commit handling. Heuristic: the
+# guard must be within 20 lines (same function); wm_view_xdg_apply_pending() is
+# the replay helper and is itself checked to be called under initial_commit.
+if ! awk '
+	/^[[:space:]]*\*/ || /^[[:space:]]*\/\*/ { next }
+	/^[a-zA-Z_].*\(/ {
+		fn = $0; sub(/\(.*/, "", fn); n = split(fn, a, " "); fn = a[n]; guard = 0
+	}
+	/initialized|initial_commit/ { guard = NR }
+	/wlr_xdg_toplevel_set_|wlr_xdg_surface_schedule_configure/ {
+		if (fn != "wm_view_xdg_apply_pending" && (guard == 0 || NR - guard > 20)) {
+			printf("     %s:%d (%s) %s\n", FILENAME, FNR, fn, $0); bad = 1
+		}
+	}
+	/wm_view_xdg_apply_pending\(view\);/ {
+		if (guard == 0 || NR - guard > 15) {
+			printf("     %s:%d apply_pending outside initial_commit\n", FILENAME, FNR); bad = 1
+		}
+	}
+	END { exit bad }
+' src/wm/*.c; then
+	note "FAIL xdg configure call without an initialized/initial_commit guard (listed above)"
+	fail=1
+else
+	note "ok   xdg configure calls all guarded by initialized/initial_commit"
+fi
+
+# --- surface lifecycle guard --------------------------------------------
+# wlroots >= 0.18: xdg roles only exist once new_toplevel fires, and both xdg
+# and layer-shell surfaces need a configure on their first commit. Getting
+# this wrong compiles fine and crashes at the first window.
+if grep -q 'xdg_shell->events.new_surface' src/wm/wm_server.c; then
+	note "FAIL xdg_shell still listens to new_surface (role is not set yet)"
+	fail=1
+elif ! grep -q 'xdg_shell->events.new_toplevel' src/wm/wm_server.c; then
+	note "FAIL xdg_shell does not listen to new_toplevel"
+	fail=1
+elif ! grep -q 'initial_commit' src/wm/wm_view_xdg.c; then
+	note "FAIL xdg views never answer initial_commit"
+	fail=1
+elif ! grep -q 'initial_commit' src/wm/wm_view_layer.c; then
+	note "FAIL layer views never answer initial_commit"
+	fail=1
+elif ! grep -q 'events.associate' src/wm/wm_view_xwayland.c; then
+	note "FAIL xwayland views do not track associate/dissociate"
+	fail=1
+else
+	note "ok   surface lifecycle: new_toplevel + initial_commit + associate"
+fi
+
 # --- listener inventory (informational, for the PR) ---------------------
 note ""
 note "listener inventory (wl_signal_add per file):"

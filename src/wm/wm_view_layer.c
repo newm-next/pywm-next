@@ -154,6 +154,18 @@ static void handle_new_subsurface(struct wl_listener* listener, void* data){
 static void handle_surface_commit(struct wl_listener* listener, void* data){
     struct wm_view_layer* view = wl_container_of(listener, view, surface_commit);
 
+    /*
+     * wlroots >= 0.18: the compositor must send a configure in reaction to the
+     * first commit, and only then is the surface initialized (wlroots sets
+     * initialized before emitting this event, hence the call is legal here).
+     * Without it the panel never maps, and calling configure before the first
+     * commit hits an assert in wlr_layer_surface_v1_configure().
+     */
+    if(view->wlr_layer_surface->initial_commit){
+        wlr_layer_surface_v1_configure(view->wlr_layer_surface,
+                view->requested_width, view->requested_height);
+    }
+
     int width = view->wlr_layer_surface->surface->current.width;
     int height = view->wlr_layer_surface->surface->current.height;
 
@@ -398,6 +410,16 @@ static void wm_view_layer_get_size(struct wm_view* super, int* width, int* heigh
 
 static void wm_view_layer_request_size(struct wm_view* super, int width, int height){
     struct wm_view_layer* view = wm_cast(wm_view_layer, super);
+
+    view->requested_width = width;
+    view->requested_height = height;
+
+    /* wlr_layer_surface_v1_configure() asserts on !initialized; the size is
+     * kept and sent from handle_surface_commit() on the initial commit. */
+    if(!view->wlr_layer_surface->initialized){
+        return;
+    }
+
     wlr_layer_surface_v1_configure(view->wlr_layer_surface, width, height);
 }
 

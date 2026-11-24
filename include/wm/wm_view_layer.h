@@ -57,6 +57,11 @@ struct wm_view_layer {
     int width;
     int height;
 
+    /* Size asked by the layout before the surface is initialized. wlroots
+     * asserts when configuring earlier, so it is applied on initial_commit. */
+    int requested_width;
+    int requested_height;
+
     struct wl_list popups;
     struct wl_list subsurfaces;
 

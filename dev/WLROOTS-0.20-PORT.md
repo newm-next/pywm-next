@@ -107,7 +107,20 @@ Pas de structure lue : `wm_cursor.c` calcule `delta_x/delta_y` lui-même.
    ré-uploadés par recréation de la texture (`wlr_texture_from_pixels`). Rendu
    identique, coût d'allocation à chaque mise à jour de widget.
 
-## 4. À vérifier sur matériel (non testable sur le VPS : pas de /dev/dri)
+## 4. Cycle de vie des surfaces (0.18+) — plantages corrigés après le premier test réel
+
+Le port compilait mais ne pouvait afficher aucune fenêtre : ces changements de
+cycle de vie ne cassent pas la compilation, seulement l'exécution.
+
+| Sujet | Symptôme | 0.20.2 |
+|---|---|---|
+| Rôle xdg | `wm_server.c` écoutait `wlr_xdg_shell.events.new_surface`, émis **avant** l'attribution du rôle : `surface->toplevel` vaut NULL et `wm_view_xdg_init` le déréférence (SIGSEGV à la première fenêtre) | écoute `events.new_toplevel` (`include/wlr/types/wlr_xdg_shell.h:27`) ; le payload est un `wlr_xdg_toplevel*`, la vue repart de `toplevel->base`. Les popups arrivent toujours par `new_popup` de la vue parente. |
+| Première configuration xdg | la fenêtre ne mappe jamais | `wlr_xdg_surface.initial_commit` (`types/xdg_shell/wlr_xdg_surface.c:326-327`) : sur le premier commit, `wm_view_xdg.c` / popups appellent `wlr_xdg_surface_schedule_configure()` (`include/wlr/types/wlr_xdg_shell.h:591`). |
+| Première configuration layer-shell | **SIGABRT** : `wlr_layer_surface_v1_configure()` commence par `assert(surface->initialized)` (`types/wlr_layer_shell_v1.c:316-318`) et pywm l'appelait sans condition | la taille demandée par le layout est mémorisée (`requested_width/height`) tant que `!initialized`, puis envoyée sur `initial_commit` (`types/wlr_layer_shell_v1.c:399-400` met `initialized = true` avant d'émettre le commit). |
+| Requêtes sur une fenêtre masquée | **SIGABRT** : les setters (`set_size`, `set_tiled`, `set_resizing`, `set_fullscreen`, `set_maximized`, `set_activated`) appellent tous `wlr_xdg_surface_schedule_configure()`, qui exige une surface initialisée ; or `reset_xdg_surface()` remet `initialized = false` à chaque unmap, alors que newm continue de piloter la vue | `types/xdg_shell/wlr_xdg_toplevel.c:598` → `types/xdg_shell/wlr_xdg_surface.c:168` (assert) ; `reset_xdg_surface` : `wlr_xdg_surface.c:28-30`, appelé sur unmap `:320-321` | état miroir dans `struct wm_view_xdg::pending` (taille, flottant, redimensionnement, plein écran, maximisation, focus), rejoué dans `wm_view_xdg_apply_pending()` au `initial_commit` suivant ; la fermeture des popups à la désactivation reste immédiate |
+| Xwayland | `surface->surface` est NULL à la création : les `wl_signal_add` sur `map`/`unmap` déréférencent NULL | `wlr_xwayland_surface.surface` n'est valide qu'entre `associate` et `dissociate` (`include/wlr/xwayland/xwayland.h:126-128`) : les listeners de surface sont posés sur `associate` et retirés sur `dissociate`. |
+
+## 5. À vérifier sur matériel (non testable sur le VPS : pas de /dev/dri)
 
 1. Démarrage du compositeur + `_pywm` importable ; newm-next se lance et affiche.
 2. Sortie DRM : mode, scale HiDPI, rotation ; pas de frame perdue en continu.
@@ -122,4 +135,4 @@ Pas de structure lue : `wm_cursor.c` calcule `delta_x/delta_y` lui-même.
    (Ctrl-Alt-F1…F12). Scroll avec **trois** périphériques — molette à crans
    classique, molette haute résolution, touchpad deux doigts — même vitesse
    qu'avant, pas de cran qui « colle », et le sens s'inverse proprement.
-8. Xwayland : fenêtre X11, décoration, maximize, curseur racine.
+8. Xwayland : ouvrir une application X11 (fenêtre + décoration), maximize, curseur racine.

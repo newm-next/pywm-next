@@ -92,16 +92,20 @@ static void handle_new_output(struct wl_listener* listener, void* data){
     wm_layout_add_output(server->wm_layout, output);
 }
 
-static void handle_new_xdg_surface(struct wl_listener* listener, void* data){
-    wlr_log(WLR_DEBUG, "Server: New xdg surface");
+static void handle_new_xdg_toplevel(struct wl_listener* listener, void* data){
+    wlr_log(WLR_DEBUG, "Server: New xdg toplevel");
 
     struct wm_server* server = wl_container_of(listener, server, new_xdg_surface);
-    struct wlr_xdg_surface* surface = data;
 
-    if(surface->role == WLR_XDG_SURFACE_ROLE_POPUP){
-        /* Popups should be handled by the parent */
-        return;
-    }
+    /*
+     * wlroots >= 0.18 emits xdg_shell.new_toplevel once the role is set, so
+     * the payload is a wlr_xdg_toplevel and ->base is fully populated.
+     * Listening to new_surface (as 0.16 allowed) fires before the role exists
+     * and leaves surface->toplevel NULL. Popups still arrive through the
+     * parent view's new_popup listener.
+     */
+    struct wlr_xdg_toplevel* toplevel = data;
+    struct wlr_xdg_surface* surface = toplevel->base;
 
     wlr_xdg_surface_ping(surface);
 
@@ -368,8 +372,8 @@ void wm_server_init(struct wm_server* server, struct wm_config* config){
     server->new_output.notify = handle_new_output;
     wl_signal_add(&server->wlr_backend->events.new_output, &server->new_output);
 
-    server->new_xdg_surface.notify = handle_new_xdg_surface;
-    wl_signal_add(&server->wlr_xdg_shell->events.new_surface, &server->new_xdg_surface);
+    server->new_xdg_surface.notify = handle_new_xdg_toplevel;
+    wl_signal_add(&server->wlr_xdg_shell->events.new_toplevel, &server->new_xdg_surface);
 
     server->new_layer_surface.notify = handle_new_layer_surface;
     wl_signal_add(&server->wlr_layer_shell->events.new_surface, &server->new_layer_surface);

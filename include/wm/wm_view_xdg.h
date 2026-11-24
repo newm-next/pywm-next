@@ -62,6 +62,28 @@ struct wm_view_xdg {
 
     bool initialized;
 
+    /*
+     * wlroots >= 0.18: every wlr_xdg_toplevel_set_*() ends in
+     * wlr_xdg_surface_schedule_configure(), which asserts(surface->initialized).
+     * A surface loses that flag as soon as it is unmapped (reset_xdg_surface),
+     * so requests arriving while the window is hidden are recorded here and
+     * applied on the next initial_commit, where the flag is set again.
+     */
+    struct {
+        bool size_set;
+        int width, height;
+        bool tiled_set;
+        bool floating;
+        bool resizing_set;
+        bool resizing;
+        bool fullscreen_set;
+        bool fullscreen;
+        bool maximized_set;
+        bool maximized;
+        bool activated_set;
+        bool activated;
+    } pending;
+
     int floating_set; /* -1: not at all, 0: false, 1: true */
     bool constrain_popups_to_toplevel; /* false = constrain to output */
 
