@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
 #include <wayland-server.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
@@ -258,6 +259,38 @@ static void handle_surface_ack_configure(struct wl_listener* listener, void* dat
     possibly_update_size(view);
 }
 
+/*
+ * Apply the state recorded while the surface was not initialized.
+ *
+ * Only legal from here: wlroots sets surface->initialized = true before it
+ * emits this commit (types/xdg_shell/wlr_xdg_surface.c:326-327), which is what
+ * releases the assert in wlr_xdg_surface_schedule_configure() (:168).
+ */
+static void wm_view_xdg_apply_pending(struct wm_view_xdg* view){
+    struct wlr_xdg_toplevel* toplevel = view->wlr_xdg_surface->toplevel;
+
+    if(view->pending.size_set){
+        wlr_xdg_toplevel_set_size(toplevel, view->pending.width, view->pending.height);
+    }
+    if(view->pending.tiled_set){
+        wlr_xdg_toplevel_set_tiled(toplevel, view->pending.floating ? 0 : 15);
+    }
+    if(view->pending.resizing_set){
+        wlr_xdg_toplevel_set_resizing(toplevel, view->pending.resizing);
+    }
+    if(view->pending.fullscreen_set){
+        wlr_xdg_toplevel_set_fullscreen(toplevel, view->pending.fullscreen);
+    }
+    if(view->pending.maximized_set){
+        wlr_xdg_toplevel_set_maximized(toplevel, view->pending.maximized);
+    }
+    if(view->pending.activated_set){
+        wlr_xdg_toplevel_set_activated(toplevel, view->pending.activated);
+    }
+
+    memset(&view->pending, 0, sizeof(view->pending));
+}
+
 static void handle_surface_commit(struct wl_listener* listener, void* data){
     struct wm_view_xdg* view = wl_container_of(listener, view, surface_commit);
 
@@ -284,11 +317,16 @@ static void handle_surface_commit(struct wl_listener* listener, void* data){
 
     /*
      * wlroots >= 0.18: the compositor has to answer the first commit with a
-     * configure, otherwise the client never maps. The size was already pushed
-     * into the pending state by the layout above (wlr_xdg_toplevel_set_size()
-     * only records pending until the surface is initialized).
+     * configure, otherwise the client never maps. This is also the only safe
+     * place to replay the requests recorded while the window was unmapped:
+     * wlr_xdg_toplevel_set_*() end in wlr_xdg_surface_schedule_configure()
+     * (types/xdg_shell/wlr_xdg_toplevel.c:598), which asserts
+     * surface->initialized (:168), and a surface loses that flag when it is
+     * unmapped (reset_xdg_surface, wlr_xdg_surface.c:28-30, called at
+     * :320-321). wlroots sets it again just before emitting this commit.
      */
     if(view->wlr_xdg_surface->initial_commit){
+        wm_view_xdg_apply_pending(view);
         wlr_xdg_surface_schedule_configure(view->wlr_xdg_surface);
     }
 
@@ -527,6 +565,7 @@ void wm_view_xdg_init(struct wm_view_xdg* view, struct wm_server* server, struct
     wl_signal_add(&surface->toplevel->events.request_show_window_menu, &view->request_show_window_menu);
 
     view->initialized = false;
+    memset(&view->pending, 0, sizeof(view->pending));
 
     view->constrain_popups_to_toplevel = server->wm_config->constrain_popups_to_toplevel;
 
@@ -609,6 +648,14 @@ static void wm_view_xdg_request_size(struct wm_view* super, int width, int heigh
             wlr_log(WLR_DEBUG, "DEBUG_SIZE: Request %dx%d", width, height);
         }
 #endif
+        if(!view->wlr_xdg_surface->initialized){
+            /* See struct wm_view_xdg::pending: wlroots asserts on
+             * schedule_configure() until the surface is initialized again. */
+            view->pending.size_set = true;
+            view->pending.width = width;
+            view->pending.height = height;
+            return;
+        }
         wlr_xdg_toplevel_set_size(view->wlr_xdg_surface->toplevel, width, height);
     }else{
         wlr_log(WLR_DEBUG, "Warning: Not toplevel");
@@ -672,34 +719,69 @@ static void wm_view_xdg_set_floating(struct wm_view* super, bool floating){
     struct wm_view_xdg* view = wm_cast(wm_view_xdg, super);
     if(floating == view->floating_set) return;
 
-    wlr_xdg_toplevel_set_tiled(view->wlr_xdg_surface->toplevel, floating ? 0 : 15);
     view->floating_set = floating;
+
+    if(!view->wlr_xdg_surface->initialized){
+        view->pending.tiled_set = true;
+        view->pending.floating = floating;
+        return;
+    }
+
+    wlr_xdg_toplevel_set_tiled(view->wlr_xdg_surface->toplevel, floating ? 0 : 15);
 }
 
 static void wm_view_xdg_set_resizing(struct wm_view* super, bool resizing){
     struct wm_view_xdg* view = wm_cast(wm_view_xdg, super);
+
+    if(!view->wlr_xdg_surface->initialized){
+        view->pending.resizing_set = true;
+        view->pending.resizing = resizing;
+        return;
+    }
+
     wlr_xdg_toplevel_set_resizing(view->wlr_xdg_surface->toplevel, resizing);
 }
 
 static void wm_view_xdg_set_fullscreen(struct wm_view* super, bool fullscreen){
     struct wm_view_xdg* view = wm_cast(wm_view_xdg, super);
+
+    if(!view->wlr_xdg_surface->initialized){
+        view->pending.fullscreen_set = true;
+        view->pending.fullscreen = fullscreen;
+        return;
+    }
+
     wlr_xdg_toplevel_set_fullscreen(view->wlr_xdg_surface->toplevel, fullscreen);
 }
 
 static void wm_view_xdg_set_maximized(struct wm_view* super, bool maximized){
     struct wm_view_xdg* view = wm_cast(wm_view_xdg, super);
+
+    if(!view->wlr_xdg_surface->initialized){
+        view->pending.maximized_set = true;
+        view->pending.maximized = maximized;
+        return;
+    }
+
     wlr_xdg_toplevel_set_maximized(view->wlr_xdg_surface->toplevel, maximized);
 }
 
 static void wm_view_xdg_set_activated(struct wm_view* super, bool activated){
     struct wm_view_xdg* view = wm_cast(wm_view_xdg, super);
 
-    /* Close popups on deactivate */
+    /* Close popups on deactivate - this stays immediate, a popup belongs to
+     * the current state of the window and must not survive its deactivation */
     if(!activated){
         struct wlr_xdg_popup* popup, *tmp;
         wl_list_for_each_safe(popup, tmp, &view->wlr_xdg_surface->popups, link){
             wlr_xdg_popup_destroy(popup);
         }
+    }
+
+    if(!view->wlr_xdg_surface->initialized){
+        view->pending.activated_set = true;
+        view->pending.activated = activated;
+        return;
     }
 
     wlr_xdg_toplevel_set_activated(view->wlr_xdg_surface->toplevel, activated);
