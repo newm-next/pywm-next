@@ -105,6 +105,29 @@ else
 	note "ok   scroll: delta_discrete converted from v120 to whole notches"
 fi
 
+# --- surface lifecycle guard --------------------------------------------
+# wlroots >= 0.18: xdg roles only exist once new_toplevel fires, and both xdg
+# and layer-shell surfaces need a configure on their first commit. Getting
+# this wrong compiles fine and crashes at the first window.
+if grep -q 'xdg_shell->events.new_surface' src/wm/wm_server.c; then
+	note "FAIL xdg_shell still listens to new_surface (role is not set yet)"
+	fail=1
+elif ! grep -q 'xdg_shell->events.new_toplevel' src/wm/wm_server.c; then
+	note "FAIL xdg_shell does not listen to new_toplevel"
+	fail=1
+elif ! grep -q 'initial_commit' src/wm/wm_view_xdg.c; then
+	note "FAIL xdg views never answer initial_commit"
+	fail=1
+elif ! grep -q 'initial_commit' src/wm/wm_view_layer.c; then
+	note "FAIL layer views never answer initial_commit"
+	fail=1
+elif ! grep -q 'events.associate' src/wm/wm_view_xwayland.c; then
+	note "FAIL xwayland views do not track associate/dissociate"
+	fail=1
+else
+	note "ok   surface lifecycle: new_toplevel + initial_commit + associate"
+fi
+
 # --- listener inventory (informational, for the PR) ---------------------
 note ""
 note "listener inventory (wl_signal_add per file):"
