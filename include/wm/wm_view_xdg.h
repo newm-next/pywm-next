@@ -43,6 +43,7 @@ struct wm_popup_xdg {
     struct wl_listener map;
     struct wl_listener unmap;
     struct wl_listener destroy;
+    struct wl_listener popup_destroy;
     struct wl_listener new_popup;
     struct wl_listener new_subsurface;
     struct wl_listener surface_commit;
@@ -98,6 +99,7 @@ struct wm_view_xdg {
     struct wl_listener map;
     struct wl_listener unmap;
     struct wl_listener destroy;
+    struct wl_listener toplevel_destroy;
     struct wl_listener new_popup;
     struct wl_listener new_subsurface;
 

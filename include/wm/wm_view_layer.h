@@ -41,6 +41,7 @@ struct wm_popup_layer {
     struct wl_listener map;
     struct wl_listener unmap;
     struct wl_listener destroy;
+    struct wl_listener popup_destroy;
     struct wl_listener new_popup;
     struct wl_listener new_subsurface;
     struct wl_listener surface_commit;
