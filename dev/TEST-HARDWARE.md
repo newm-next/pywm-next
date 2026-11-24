@@ -16,12 +16,25 @@ Avant de commencer :
 `$HOME/.cache/newm/newm_log` doit contenir les lignes de démarrage de pywm sans
 `ERROR`. Gardez ce fichier : en cas de problème, c'est la pièce à joindre.
 
+## Ordre de test
+
+Trois étapes, dans cet ordre : chacune exerce un code différent du portage, et
+s'arrêter à la première qui échoue donne un diagnostic net.
+
+1. **Le panneau apparaît** (layer-shell, première configuration au commit) ;
+2. **une fenêtre Wayland se mappe** (`new_toplevel`, surfaces xdg) ;
+3. **une application X11 s'ouvre** (cycle associate/dissociate de Xwayland).
+
+Si l'étape 1 échoue, le compositeur meurt avant tout affichage : c'est
+layer-shell. Si l'étape 2 le tue, c'est le cycle de vie des surfaces xdg. Si
+seule l'étape 3 échoue, c'est Xwayland seul.
+
 ## 1. Démarrage
 
 | À faire | À voir |
 |---|---|
 | Lancer `start-newm -d` depuis un TTY | l'écran passe en noir puis affiche le fond newm ; aucune erreur Wayland dans le journal |
-| `python -c "import _pywm"` dans le venv | aucune exception (le module se charge) |
+| `python -c "import pywm._pywm"` dans le venv | aucune exception (le module se charge) |
 
 Régression = le compositeur sort immédiatement, ou le journal affiche
 `undefined symbol` / `failed to open backend`.
@@ -49,7 +62,25 @@ Régression = mode non appliqué, moitié de l'écran figée, ou saccade périod
 Régression = traînées, rectangles figés, ou scintillement : c'est
 `wlr_damage_ring` mal alimenté.
 
-## 4. Rendu custom (risque le plus élevé)
+## 4. Cycle de vie des fenêtres (masquer / réafficher)
+
+C'est le scénario qui a motivé les garde-fous du correctif : une fenêtre masquée
+par son application perd son statut « initialisée » côté wlroots, et toute
+commande de newm (taille, focus, plein écran) arrivée à ce moment doit être
+mise en attente puis appliquée au retour, sans tuer le compositeur.
+
+| À faire | À voir |
+|---|---|
+| Ouvrir un dialogue, le masquer (fermeture de la fenêtre parente ou `Super-q`), puis le réafficher | la fenêtre revient à sa place et à sa taille, le compositeur ne meurt pas |
+| Pendant qu'une fenêtre est masquée, changer le focus vers une autre fenêtre | rien ne plante ; au retour, la fenêtre réapparaît avec la taille demandée |
+| Masquer une fenêtre, la réafficher, puis la passer en plein écran | plein écran correct, pas de géométrie héritée de l'état précédent |
+| Masquer puis réafficher plusieurs fois de suite | toujours la même géométrie, aucune dérive |
+
+Régression = SIGABRT/SIGSEGV au moment du réaffichage ou du changement de
+focus, fenêtre qui revient avec une taille d'il y a dix minutes, ou `configure`
+en boucle dans le journal.
+
+## 5. Rendu custom (risque le plus élevé)
 
 | À faire | À voir |
 |---|---|
@@ -62,7 +93,7 @@ Régression = traînées, rectangles figés, ou scintillement : c'est
 Régression = tout à l'envers (projection inversée), noir, ou texte brouillé.
 C'est le seul point où le portage a réécrit du code GL.
 
-## 5. Curseur
+## 6. Curseur
 
 | À faire | À voir |
 |---|---|
@@ -74,7 +105,7 @@ C'est le seul point où le portage a réécrit du code GL.
 Régression = curseur invisible, figé, ou thème différent sur Xwayland —
 voir l'écart assumé n°1 plus bas.
 
-## 6. Gamma
+## 7. Gamma
 
 ```sh
 gammastep -O 3500     # ou redshift
@@ -86,7 +117,7 @@ gammastep -O 3500     # ou redshift
 Régression = aucune effet : wlroots 0.20 a supprimé `wlr_output_set_gamma()`,
 la rampe passe maintenant par `events.set_gamma`.
 
-## 7. Entrées
+## 8. Entrées
 
 | À faire | À voir |
 |---|---|
@@ -108,7 +139,7 @@ proprement, sans cran fantôme. Si le scroll est ~120× trop rapide, la
 conversion v120 n'a pas été appliquée ; si la molette haute résolution ne
 produit plus aucun cran, l'accumulateur est cassé.
 
-## 8. Xwayland
+## 9. Xwayland
 
 | À faire | À voir |
 |---|---|

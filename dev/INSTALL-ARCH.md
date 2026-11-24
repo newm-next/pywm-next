@@ -151,8 +151,17 @@ Depuis un TTY (VT libre), **pas** depuis une session X11/Wayland existante :
 précédent en `newm_log.old.<date>`. Le flag `-d` active les traces détaillées.
 
 Si le compositeur refuse de démarrer : vérifier que le TTY courant est libre,
-que l'utilisateur appartient aux groupes `video` et `input`, et que
-`/dev/dri/card0` est accessible.
+que l'utilisateur appartient aux groupes `video` et `input`, et que le nœud
+`/dev/dri/card*` de votre GPU est accessible. **Le numéro de carte n'a pas
+d'importance** : `card0` ou `card1` (i915, amdgpu, nouveau…) sont équivalents,
+wlroots prend celui que libseat lui donne. Ne cherchez pas à forcer `card0`.
+
+Avertissements du journal qui **ne sont pas bloquants** :
+
+| Message | Signification |
+|---|---|
+| `Disabling BacklightManager` / `brightnessctl: not found` | le rétroéclairage n'est pas géré : installer `brightnessctl` si vous le voulez, rien d'autre ne dépend de lui |
+| `greeter` introuvable | le verrouillage d'écran de newm n'a pas de greeter configuré ; sans effet sur le compositeur |
 
 ## 5. Retour arrière
 
