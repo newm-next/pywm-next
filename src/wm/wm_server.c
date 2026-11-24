@@ -181,10 +181,18 @@ static void handle_new_xdg_decoration(struct wl_listener* listener, void* data){
 
     if(!found){
         wlr_log(WLR_INFO, "Could not find view for XDG toplevel decoration - setting default");
-        wlr_xdg_toplevel_decoration_v1_set_mode(
-                wlr_deco, server->wm_config->encourage_csd ?
-                WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE :
-                WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+        /* set_mode() configures the toplevel, which wlroots only allows once
+         * the surface is initialized. Without a view there is nobody to
+         * replay the request later, so leave the decoration alone until the
+         * client has committed a first time and set_mode() is legal. */
+        if(wlr_deco->toplevel->base->initialized){
+            wlr_xdg_toplevel_decoration_v1_set_mode(
+                    wlr_deco, server->wm_config->encourage_csd ?
+                    WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE :
+                    WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+        }else{
+            wlr_log(WLR_INFO, "Decoration before first commit - leaving default mode");
+        }
     }
 
 }

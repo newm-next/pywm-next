@@ -105,6 +105,27 @@ else
 	note "ok   scroll: delta_discrete converted from v120 to whole notches"
 fi
 
+# --- configure call graph (wlroots sources) ------------------------------
+# dev/check-configure-guards.py rebuilds the call graph of the wlroots sources
+# shipped in subprojects/wlroots, lists every public function that ends up
+# configuring a surface, and fails if pywm calls one without an
+# initialized/initial_commit guard. This is what catches a setter that is
+# added later on a code path nobody thought about.
+if ! command -v python3 >/dev/null 2>&1; then
+	note "skip configure call graph (python3 not found)"
+elif [ ! -d subprojects/wlroots ]; then
+	note "skip configure call graph (subprojects/wlroots not checked out)"
+else
+	if guards_out=$(python3 dev/check-configure-guards.py 2>&1); then
+		printf '%s\n' "$guards_out"
+		note "ok   no unguarded wlroots configure call"
+	else
+		printf '%s\n' "$guards_out"
+		note "FAIL unguarded wlroots configure call (listed above)"
+		fail=1
+	fi
+fi
+
 # --- xdg configure guard -------------------------------------------------
 # Every wlr_xdg_toplevel_set_*() / wlr_xdg_surface_schedule_configure() ends in
 # schedule_configure(), which asserts surface->initialized. A surface loses that

@@ -30,6 +30,8 @@ struct wm_view_vtable wm_view_xdg_vtable;
 /* #define DEBUG_SIZE "soffice" */
 
 
+static void wm_popup_xdg_unconstrain(struct wm_popup_xdg* popup);
+
 /*
  * Callbacks
  */
@@ -130,9 +132,11 @@ static void popup_handle_surface_commit(struct wl_listener* listener, void* data
 
     if(!popup->toplevel) return;
 
-    /* Same initial-configure requirement as for toplevels (wlroots >= 0.18) */
+    /* Same initial-configure requirement as for toplevels (wlroots >= 0.18).
+     * The positioning below sends the configure itself, so no extra
+     * schedule_configure() here. */
     if(popup->wlr_xdg_popup->base->initial_commit){
-        wlr_xdg_surface_schedule_configure(popup->wlr_xdg_popup->base);
+        wm_popup_xdg_unconstrain(popup);
     }
 
     wm_layout_damage_from(
@@ -287,6 +291,10 @@ static void wm_view_xdg_apply_pending(struct wm_view_xdg* view){
     if(view->pending.activated_set){
         wlr_xdg_toplevel_set_activated(toplevel, view->pending.activated);
     }
+    if(view->pending.deco_mode_set && view->wlr_deco){
+        /* the decoration may have been destroyed while the window was hidden */
+        wlr_xdg_toplevel_decoration_v1_set_mode(view->wlr_deco, view->pending.deco_mode);
+    }
 
     memset(&view->pending, 0, sizeof(view->pending));
 }
@@ -427,33 +435,13 @@ void wm_xdg_subsurface_destroy(struct wm_xdg_subsurface* subsurface){
 /*
  * Class implementation wm_popup_xdg
  */
-void wm_popup_xdg_init(struct wm_popup_xdg* popup, struct wm_view_xdg* toplevel, struct wlr_xdg_popup* wlr_xdg_popup){
-
-    popup->wlr_xdg_popup = wlr_xdg_popup;
-    popup->toplevel = toplevel;
-
-    wl_list_init(&popup->subsurfaces);
-    wl_list_init(&popup->popups);
-
-    popup->map.notify = &popup_handle_map;
-    wl_signal_add(&wlr_xdg_popup->base->surface->events.map, &popup->map);
-
-    popup->unmap.notify = &popup_handle_unmap;
-    wl_signal_add(&wlr_xdg_popup->base->surface->events.unmap, &popup->unmap);
-
-    popup->destroy.notify = &popup_handle_destroy;
-    wl_signal_add(&wlr_xdg_popup->base->events.destroy, &popup->destroy);
-
-    popup->new_popup.notify = &popup_handle_new_popup;
-    wl_signal_add(&wlr_xdg_popup->base->events.new_popup, &popup->new_popup);
-
-    popup->new_subsurface.notify = &popup_handle_new_subsurface;
-    wl_signal_add(&wlr_xdg_popup->base->surface->events.new_subsurface, &popup->new_subsurface);
-
-    popup->surface_commit.notify = &popup_handle_surface_commit;
-    wl_signal_add(&wlr_xdg_popup->base->surface->events.commit, &popup->surface_commit);
-
-    /* Unconstrain popup */
+/*
+ * Positioning the popup sends its configure: wlr_xdg_popup_unconstrain_from_box()
+ * ends in wlr_xdg_surface_schedule_configure() (types/xdg_shell/wlr_xdg_popup.c).
+ * It therefore has to run on the popup's first commit, when the surface is
+ * initialized - calling it from wm_popup_xdg_init() aborted the compositor.
+ */
+static void wm_popup_xdg_unconstrain(struct wm_popup_xdg* popup){
     int width, height;
     wm_view_get_size(&popup->toplevel->super, &width, &height);
 
@@ -480,6 +468,33 @@ void wm_popup_xdg_init(struct wm_popup_xdg* popup, struct wm_view_xdg* toplevel,
         };
         wlr_xdg_popup_unconstrain_from_box(popup->wlr_xdg_popup, &box);
     }
+}
+
+void wm_popup_xdg_init(struct wm_popup_xdg* popup, struct wm_view_xdg* toplevel, struct wlr_xdg_popup* wlr_xdg_popup){
+
+    popup->wlr_xdg_popup = wlr_xdg_popup;
+    popup->toplevel = toplevel;
+
+    wl_list_init(&popup->subsurfaces);
+    wl_list_init(&popup->popups);
+
+    popup->map.notify = &popup_handle_map;
+    wl_signal_add(&wlr_xdg_popup->base->surface->events.map, &popup->map);
+
+    popup->unmap.notify = &popup_handle_unmap;
+    wl_signal_add(&wlr_xdg_popup->base->surface->events.unmap, &popup->unmap);
+
+    popup->destroy.notify = &popup_handle_destroy;
+    wl_signal_add(&wlr_xdg_popup->base->events.destroy, &popup->destroy);
+
+    popup->new_popup.notify = &popup_handle_new_popup;
+    wl_signal_add(&wlr_xdg_popup->base->events.new_popup, &popup->new_popup);
+
+    popup->new_subsurface.notify = &popup_handle_new_subsurface;
+    wl_signal_add(&wlr_xdg_popup->base->surface->events.new_subsurface, &popup->new_subsurface);
+
+    popup->surface_commit.notify = &popup_handle_surface_commit;
+    wl_signal_add(&wlr_xdg_popup->base->surface->events.commit, &popup->surface_commit);
 
     struct wlr_subsurface* ss;
     wl_list_for_each(ss, &wlr_xdg_popup->base->surface->current.subsurfaces_below, current.link){
@@ -930,16 +945,36 @@ void wm_view_xdg_register_server_decoration(struct wm_view_xdg* view, struct wlr
     view->super.shows_csd = wlr_deco->mode == WLR_SERVER_DECORATION_MANAGER_MODE_CLIENT;
 }
 
+/*
+ * Decoration mode is a toplevel configure request as well:
+ * wlr_xdg_toplevel_decoration_v1_set_mode() ends in
+ * wlr_xdg_surface_schedule_configure() (types/wlr_xdg_decoration_v1.c:56-57),
+ * which asserts(surface->initialized). Clients create their decoration before
+ * the first commit, so the mode is recorded and replayed at initial_commit.
+ */
+static void wm_view_xdg_set_decoration_mode(struct wm_view_xdg* view,
+        enum wlr_xdg_toplevel_decoration_v1_mode mode){
+    view->pending.deco_mode_set = true;
+    view->pending.deco_mode = mode;
+
+    if(!view->wlr_xdg_surface->initialized){
+        return;
+    }
+
+    wlr_xdg_toplevel_decoration_v1_set_mode(view->wlr_deco, mode);
+}
+
 static void deco_handle_request_mode(struct wl_listener* listener, void* data){
     struct wm_view_xdg* view = wl_container_of(listener, view, deco_request_mode);
 
     wlr_log(WLR_DEBUG, "xdg decoration request: %s (setting default)", view->wlr_deco->requested_mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE ? "SSD" :
             (view->wlr_deco->requested_mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE ? "CSD" : ""));
 
-    wlr_xdg_toplevel_decoration_v1_set_mode(view->wlr_deco, wm_view_xdg_encourage_csd(view) ?
+    wm_view_xdg_set_decoration_mode(view, wm_view_xdg_encourage_csd(view) ?
             WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE :
             WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
 
+    /* shows_csd does not depend on the surface being initialized */
     view->super.shows_csd = wm_view_xdg_encourage_csd(view);
 }
 
@@ -956,10 +991,9 @@ void wm_view_xdg_register_decoration(struct wm_view_xdg* view, struct wlr_xdg_to
     wlr_log(WLR_DEBUG, "new xdg decoration: %s (setting default)", wlr_deco->current.mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE ? "SSD" :
             (wlr_deco->current.mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE ? "CSD" : ""));
 
-    wlr_xdg_toplevel_decoration_v1_set_mode(view->wlr_deco, wm_view_xdg_encourage_csd(view) ?
+    wm_view_xdg_set_decoration_mode(view, wm_view_xdg_encourage_csd(view) ?
             WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE :
             WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
-
 
     view->deco_request_mode.notify = &deco_handle_request_mode;
     wl_signal_add(&wlr_deco->events.request_mode, &view->deco_request_mode);

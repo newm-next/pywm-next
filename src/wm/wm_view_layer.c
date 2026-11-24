@@ -16,6 +16,8 @@
 
 struct wm_view_vtable wm_view_layer_vtable;
 
+static void wm_popup_layer_unconstrain(struct wm_popup_layer* popup);
+
 /*
  * Callbacks
  */
@@ -99,6 +101,12 @@ static void popup_handle_new_subsurface(struct wl_listener* listener, void* data
 
 static void popup_handle_surface_commit(struct wl_listener* listener, void* data){
     struct wm_popup_layer* popup = wl_container_of(listener, popup, surface_commit);
+
+    /* wlroots >= 0.18: the first commit of a popup needs a configure, which
+     * the positioning below sends. */
+    if(popup->wlr_xdg_popup->base->initial_commit){
+        wm_popup_layer_unconstrain(popup);
+    }
 
     wm_layout_damage_from(
             popup->root->super.super.wm_server->wm_layout,
@@ -240,6 +248,23 @@ void wm_layer_subsurface_destroy(struct wm_layer_subsurface* subsurface){
 /*
  * Class implementation wm_popup_layer
  */
+/*
+ * Same as wm_popup_xdg_unconstrain(): positioning sends the configure, so it
+ * has to wait for the popup's first commit instead of running at creation.
+ */
+static void wm_popup_layer_unconstrain(struct wm_popup_layer* popup){
+    struct wlr_box output_box;
+    wlr_output_layout_get_box(
+            popup->root->super.super.wm_server->wm_layout->wlr_output_layout, popup->root->wlr_layer_surface->output, &output_box);
+    struct wlr_box box = {
+        .x = output_box.x - popup->root->super.super.display_x,
+        .y = output_box.y - popup->root->super.super.display_y,
+        .width = output_box.width,
+        .height = output_box.height
+    };
+    wlr_xdg_popup_unconstrain_from_box(popup->wlr_xdg_popup, &box);
+}
+
 void wm_popup_layer_init(struct wm_popup_layer* popup, struct wm_view_layer* root, struct wlr_xdg_popup* wlr_xdg_popup){
 
     popup->wlr_xdg_popup = wlr_xdg_popup;
@@ -265,18 +290,6 @@ void wm_popup_layer_init(struct wm_popup_layer* popup, struct wm_view_layer* roo
 
     popup->surface_commit.notify = &popup_handle_surface_commit;
     wl_signal_add(&wlr_xdg_popup->base->surface->events.commit, &popup->surface_commit);
-
-    /* Unconstrain popup */
-    struct wlr_box output_box; 
-    wlr_output_layout_get_box(
-            popup->root->super.super.wm_server->wm_layout->wlr_output_layout, popup->root->wlr_layer_surface->output, &output_box);
-    struct wlr_box box = {
-        .x = output_box.x -popup->root->super.super.display_x,
-        .y = output_box.y -popup->root->super.super.display_y,
-        .width = output_box.width,
-        .height = output_box.height
-    };
-    wlr_xdg_popup_unconstrain_from_box(popup->wlr_xdg_popup, &box);
 
     struct wlr_subsurface* ss;
     wl_list_for_each(ss, &wlr_xdg_popup->base->surface->current.subsurfaces_below, current.link){
