@@ -32,12 +32,37 @@ type change.
 | `time_msec` | `struct wlr_event_pointer_axis` | `struct wlr_pointer_axis_event` | `uint32_t` ms |
 | `source` | `enum wlr_axis_source` | `enum wl_pointer_axis_source` | identique (wheel/finger/continuous) |
 | `orientation` | `enum wlr_axis_orientation` | `enum wl_pointer_axis` | identique (vertical/horizontal) |
-| `delta` | `double`) | `double` | **conservé**, pas fusionné avec `delta_discrete` |
-| `delta_discrete` | `int32_t` | `int32_t` | **conservé** → les unités de scroll ne changent pas |
+| `delta` | `double` | `double` | identique, `get_axis_value()` n'a pas changé |
+| `delta_discrete` | `int32_t`, **±1 par cran** | `int32_t`, **multiple de 120 (v120)** | ramené à ±1 par cran côté pywm, voir ci-dessous |
 
 0.20 ajoute `relative_direction` à la structure ; elle n'est pas transmise à
 Python (elle ne l'était pas en 0.16) et est passée telle quelle à
 `wlr_seat_pointer_notify_axis()`.
+
+### Scroll : `delta_discrete` change d'unité (vérifié ligne par ligne)
+
+| | 0.16 (`subprojects/wlroots` de master) | 0.20.2 |
+|---|---|---|
+| abonnement libinput | `backend/libinput/events.c:271` : `LIBINPUT_EVENT_POINTER_AXIS` seul | `backend/libinput/events.c:169-171` : `POINTER_AXIS` **ignoré** (« must be ignored in favour of the SCROLL_* events »), `:172` `POINTER_SCROLL_WHEEL` |
+| valeur discrète | `backend/libinput/pointer.c:140-141` : `libinput_event_pointer_get_axis_value_discrete()` brut, **±1 par cran** | `backend/libinput/pointer.c:178-179` : `get_scroll_value_v120()`, **120 par cran** ; l'ancien chemin `:137-139` multiplie par `WLR_POINTER_AXIS_DISCRETE_STEP` mais n'est plus atteint depuis libinput |
+| constante | absente | `include/wlr/types/wlr_pointer.h:74` : `#define WLR_POINTER_AXIS_DISCRETE_STEP 120` |
+
+Sans correction, newm recevait `delta_discrete` 120 fois trop grand. Le
+correctif est dans `src/py/_pywm_callbacks.c` (`wm_axis_discrete_value()`) :
+
+- accumulateur par pointeur et par orientation (`remainder[2]`), division
+  **entière** par `WLR_POINTER_AXIS_DISCRETE_STEP`, reste conservé ;
+- remise à zéro quand la source n'est pas `WL_POINTER_AXIS_SOURCE_WHEEL` ou
+  quand le sens s'inverse ;
+- `delta` n'est pas touché, `wm_seat.c` transmet toujours la valeur brute à
+  `wlr_seat_pointer_notify_axis()`, le format `(iiidi)` ne change pas.
+
+Conséquences attendues : molette classique = ±120 par cran → ±1 exactement
+comme avant ; molette haute résolution = plusieurs événements de 15 → un cran
+seulement quand le cumul atteint 120 (sans accumulateur, chaque fraction
+tronquée donnerait 0 et la molette ne produirait plus aucun cran). Écart
+assumé : une molette haute résolution produit maintenant plusieurs petits
+`delta` par cran au lieu d'un seul, la somme est identique.
 
 ### Gestes — `call_gesture_*`
 
@@ -70,7 +95,7 @@ Pas de structure lue : `wm_cursor.c` calcule `delta_x/delta_y` lui-même.
 | Matrices | `src/wm/wm_matrix.c`, `include/wm/wm_matrix.h` | `wlr_matrix_*` n'est plus exporté : helpers 3×3 copiés à l'identique de `util/matrix.c` de wlroots (mêmes formules), préfixés `wm_`. |
 | Rendu GLES | `wm_renderer.c` | `wlr_renderer_begin/end/clear/scissor`, `wlr_render_pass` → `wlr_output_begin_render_pass()` / `wlr_render_pass_submit()`. Le FBO du buffer courant s'obtient par `wlr_gles2_renderer_get_buffer_fbo()` (l'ancien `gles2_renderer->current_buffer` a disparu). La projection est recalculée localement. Le scissor est fait en GL direct (`glScissor`) avec le même flip vertical. Shaders inchangés. |
 | Curseurs | `wm_cursor.c`, `wm_renderer.c` | `wlr_cursor_set_image(NULL,…)` → `wlr_cursor_unset_image()` ; `wlr_xcursor_manager_set_cursor_image()` → `wlr_cursor_set_xcursor()` ; `wlr_output_render_software_cursors()` → `wlr_output_add_software_cursors_to_render_pass()` (avant `wlr_render_pass_submit()`). |
-| Scroll | `_pywm_callbacks.c`, `wm_seat.c` | `delta` **et** `delta_discrete` conservés → aucune conversion d'unité ; `relative_direction` ajoutée à l'appel `wlr_seat_pointer_notify_axis()` uniquement. |
+| Scroll | `_pywm_callbacks.c`, `wm_seat.c` | `delta_discrete` est en unités v120 (120 par cran) en 0.20 : accumulateur + division entière dans `wm_axis_discrete_value()` pour retrouver ±1 par cran ; `delta` et `wm_seat.c` inchangés ; `relative_direction` ajoutée à `wlr_seat_pointer_notify_axis()` uniquement. |
 
 ## 3. Écarts fonctionnels assumés
 
@@ -93,6 +118,8 @@ Pas de structure lue : `wm_cursor.c` calcule `delta_x/delta_y` lui-même.
 5. Curseur : thème, curseur client (`set_cursor`), curseur logiciel sur les
    sorties sans curseur matériel.
 6. Gamma : `wlr-gamma-control` (gammastep/redshift) applique bien la rampe.
-7. Entrées : clavier + modificateurs, scroll (vitesse inchangée), gestes
-   touchpad, changement de VT (Ctrl-Alt-F1…F12).
+7. Entrées : clavier + modificateurs, gestes touchpad, changement de VT
+   (Ctrl-Alt-F1…F12). Scroll avec **trois** périphériques — molette à crans
+   classique, molette haute résolution, touchpad deux doigts — même vitesse
+   qu'avant, pas de cran qui « colle », et le sens s'inverse proprement.
 8. Xwayland : fenêtre X11, décoration, maximize, curseur racine.

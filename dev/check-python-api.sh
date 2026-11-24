@@ -10,7 +10,8 @@
 #
 # Field-level checks of the event structs are in the PR description: they
 # cannot be automated across wlroots versions, but the format strings below
-# are the contract that would break first.
+# are the contract that would break first. One extra guard covers the scroll
+# unit change (120 per notch in 0.20), which no type/name diff can detect.
 #
 # Usage: dev/check-python-api.sh [base-ref]
 set -eu
@@ -86,6 +87,23 @@ check init "module init name" "$(cat "$tmp/new.init")"
 check callbacks "python callback inventory" "$(wc -l <"$tmp/new.callbacks") callbacks"
 check formats "Py_BuildValue formats" "$(wc -l <"$tmp/new.formats") call sites"
 check calls "Python call sites" "$(cat "$tmp/new.calls") occurrences"
+
+# --- scroll units guard --------------------------------------------------
+# wlroots >= 0.17 reports discrete axis values in 1/120 units, so the raw
+# field must not reach Python (newm would scroll 120x too fast). The name and
+# the type of the field did not change, so only an explicit check catches it.
+if ! grep -q 'wm_axis_discrete_value(event)' src/py/_pywm_callbacks.c; then
+	note "FAIL axis callback does not use wm_axis_discrete_value()"
+	fail=1
+elif ! grep -q 'WLR_POINTER_AXIS_DISCRETE_STEP' src/py/_pywm_callbacks.c; then
+	note "FAIL axis conversion does not reference WLR_POINTER_AXIS_DISCRETE_STEP"
+	fail=1
+elif grep -q 'event->delta, event->delta_discrete' src/py/_pywm_callbacks.c; then
+	note "FAIL raw event->delta_discrete still forwarded to Python"
+	fail=1
+else
+	note "ok   scroll: delta_discrete converted from v120 to whole notches"
+fi
 
 # --- listener inventory (informational, for the PR) ---------------------
 note ""
