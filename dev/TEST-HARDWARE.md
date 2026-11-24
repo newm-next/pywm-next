@@ -38,14 +38,13 @@ compositeur est encore vivant à la fin.
 | Dernière ligne affichée | Chemin en cause |
 |---|---|
 | `step 1` | décoration envoyée avant l'initialisation de la surface |
-| `step 4-6` (`frame N`) | le compositeur ne redessine pas : `wl_surface.frame` n'arrive pas après un damage (programmation d'image manquante) |
-| `step 7` | positionnement du popup hors premier commit |
-| `step 11` | état rejoué au mauvais moment après un masquer/réafficher |
-| `step 12` | listeners non retirés à la destruction de la fenêtre |
-| `step 13` et `14` | idem pour le panneau (layer-shell) |
+| `step 3` | positionnement du popup hors premier commit |
+| `step 5` | état rejoué au mauvais moment après un masquer/réafficher |
+| `step 6` | listeners non retirés à la destruction de la fenêtre |
+| `step 7` | idem pour le panneau (layer-shell) |
 
-Un échec aux étapes 12, 13 ou 14 s'accompagne d'une assertion de wlroots dans
-le journal (`destroy_xdg_toplevel` / `destroy_xdg_surface`), c'est le signe que le
+Un échec à l'étape 6 ou 7 s'accompagne d'une assertion de wlroots dans le
+journal (`destroy_xdg_toplevel` / `destroy_xdg_surface`), c'est le signe que le
 retrait des listeners n'a pas eu lieu au bon moment.
 
 Cette sonde ne remplace pas le test matériel : elle ne rend rien à l'écran et
