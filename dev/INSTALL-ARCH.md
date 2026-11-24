@@ -4,9 +4,13 @@ Archive : `pywm-wlroots-0.20.2-arch.tar.gz`. Elle contient trois arbres :
 
 | Répertoire | Contenu | Commit |
 |---|---|---|
-| `pywm-next/` | compositeur + module Python `_pywm` | `3b2b9a7` (branche `wlroots-update`) |
+| `pywm-next/` | compositeur + module Python `_pywm` | base `3b2b9a7` (`wlroots-update`) + les ajouts `dev/` de cette branche — le commit exact livré est la première ligne de `SOURCES.txt` |
 | `pywm-next/subprojects/wlroots/` | wlroots 0.20.2 (sous-module) | `d783533`, tag `0.20.2` |
 | `newm-next/` | gestionnaire de fenêtres | `dd9097f` |
+
+`SOURCES.txt`, à la racine de l'archive, fait foi : il donne les trois commits
+sur lesquels l'archive a été construite. Le document ne peut pas citer son
+propre commit — l'ajouter le changerait.
 
 Le binaire **doit être compilé sur la machine cible** : le Python d'Arch courant
 est 3.14, celui du VPS 3.13, et `_pywm` est un module d'extension C dont l'ABI
@@ -25,6 +29,7 @@ sudo pacman -S --needed base-devel git meson ninja pkgconf python python-pip \
     wayland wayland-protocols libdrm libxkbcommon pixman libinput mesa \
     libxcb xcb-util-wm xcb-util-renderutil libxfixes libxrender \
     libliftoff xorg-xwayland seatd libdisplay-info \
+    python-setuptools \
     python-numpy python-cairo python-evdev python-imageio python-psutil \
     python-pam python-dasbus python-gobject
 ```
@@ -41,7 +46,13 @@ déduit) :
 - `seatd` (fournit `libseat`) : requis par `wlroots/backend/session`.
   Sans lui : `ERROR: Dependency 'libseat' is required but not found` ;
 - `libdisplay-info` : requis par le backend DRM.
-  Sans lui : `ERROR: Dependency 'libdisplay-info' is required but not found`.
+  Sans lui : `ERROR: Dependency 'libdisplay-info' is required but not found` ;
+- `python-setuptools` : `pip install .` tourne ici avec
+  `--no-build-isolation`, donc le backend de build est cherché dans
+  l'environnement courant. Sans lui :
+  `BackendUnavailable: Cannot import 'setuptools.build_meta'`. Le paquet est du
+  reste installé dans le venv par `python -m venv` sur les versions récentes de
+  Python ; Arch ne l'embarque pas.
 
 `python-pyfiglet` et `python-thefuzz` (dans `newm-next/requirements.txt`)
 **n'existent pas dans les dépôts officiels** : ils s'installent par pip, dans
@@ -93,20 +104,40 @@ python -m venv --system-site-packages ~/.local/share/pywm-venv
 . ~/.local/share/pywm-venv/bin/activate
 
 pip install pyfiglet thefuzz                    # absents des dépôts Arch
-cd pywm-next && pip install --no-build-isolation .
-cd ../newm-next && pip install --no-build-isolation .
+cd pywm-next && PIP_USE_PEP517=0 pip install --no-build-isolation .
+cd ../newm-next && PIP_USE_PEP517=0 pip install --no-build-isolation .
 ```
 
 `--no-build-isolation` est nécessaire : `setup.py` de pywm appelle `meson` et
 `ninja` du système, que pip n'installerait pas dans un environnement isolé.
 
-Vérification rapide :
+`PIP_USE_PEP517=0` aussi : depuis pip 25/26, pip choisit seul un backend de
+build et, en présence d'un `meson.build`, il tente `meson-python` — absent, et
+qu'il ne faut **pas** installer (il configurerait wlroots avec les options par
+défaut, donc sans backend libinput). Sur pip 26.2.2, l'échec est
+`BackendUnavailable: Cannot import 'mesonpy'`. Le projet se construit par
+`setup.py` ; forcer le backend est déterministe quelle que soit la version de
+pip.
+
+**Ne pas supprimer `build/` entre l'étape 2 et l'étape 3.** `setup.py` fait
+`meson build` puis `ninja -C build` dans le répertoire courant : sur un dossier
+déjà configuré, meson répond « déjà configuré » et rend 0, et les options
+`-Dwlroots:…` de l'étape 2 sont conservées. Sur un arbre où `build/` n'existe
+pas, `pip install .` configure avec les valeurs par défaut, donc **sans backend
+libinput** : le module est produit mais refuse de s'importer. Si vous avez un
+doute, relancez la commande `meson setup …` complète de l'étape 2 avant
+d'installer.
+
+Vérification rapide — le module installé s'appelle `pywm._pywm` (`setup.py`
+copie le `.so` dans `pywm/`), pas `_pywm` :
 
 ```sh
-python -c "import _pywm; print(sorted(dir(_pywm)))"
+python -c "import pywm._pywm as m; print(sorted(x for x in dir(m) if not x.startswith('__')))"
 # ['damage', 'debug_performance', 'register', 'run']
-python -c "import pywm, newm; print(pywm.PyWM, newm.Layout)"
+python -c "import pywm, newm.layout; print(pywm.PyWM, newm.layout.Layout)"
 ```
+
+`newm.Layout` n'existe pas : la classe est `newm.layout.Layout`.
 
 ## 4. Lancer
 
