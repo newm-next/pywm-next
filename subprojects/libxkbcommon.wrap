@@ -1,4 +1,4 @@
+# pinned: xkbcommon-1.13.2 release tag (upstream ships revision = HEAD)
 [wrap-git]
 url = https://github.com/xkbcommon/libxkbcommon.git
-revision = 15b2b4e47a350712c0ebd120a100c95a7c17e04e
-# pinned: revision verified during the wlroots 0.20.2 port (upstream ships HEAD)
+revision = 322bf223710e9d3a646dd345896eb4e7a83f8c41

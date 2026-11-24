@@ -1,4 +1,4 @@
+# pinned: 1.50 release tag (upstream ships revision = HEAD)
 [wrap-git]
 url = https://gitlab.freedesktop.org/wayland/wayland-protocols.git
-revision = 3eab2dccf4bfdd85c16d312a6c8c8fbc2a6e73a8
-# pinned: revision verified during the wlroots 0.20.2 port (upstream ships HEAD)
+revision = cd14622888ca6f71f5162a1459681eb0bd58e6d0
