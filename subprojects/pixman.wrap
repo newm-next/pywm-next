@@ -1,0 +1,4 @@
+# pinned: pixman-0.46.4 release tag (upstream ships revision = HEAD)
+[wrap-git]
+url = https://gitlab.freedesktop.org/pixman/pixman.git
+revision = 3f63e263be9e7c17962918f9372600b5668b6856

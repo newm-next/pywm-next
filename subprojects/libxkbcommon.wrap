@@ -1,0 +1,4 @@
+# pinned: xkbcommon-1.13.2 release tag (upstream ships revision = HEAD)
+[wrap-git]
+url = https://github.com/xkbcommon/libxkbcommon.git
+revision = 322bf223710e9d3a646dd345896eb4e7a83f8c41

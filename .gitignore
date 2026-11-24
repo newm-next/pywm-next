@@ -6,7 +6,8 @@ compile_commands.json
 **/__pycache__/*
 pywm/*.so
 pywm/touchpad/tmp.png
-subprojects
+subprojects/*
+!subprojects/*.wrap
 .mypy_cache
 pywm.egg-info
 _pywm.so

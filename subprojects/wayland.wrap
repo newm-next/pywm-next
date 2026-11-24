@@ -1,0 +1,4 @@
+# pinned: 1.26.0 release tag (upstream ships revision = HEAD)
+[wrap-git]
+url = https://gitlab.freedesktop.org/wayland/wayland.git
+revision = 5f430e41167dd359b70fb5e9f584ba2dc058e4cc

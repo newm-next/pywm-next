@@ -1,0 +1,4 @@
+# pinned: libdrm-2.4.134 release tag (upstream ships revision = HEAD)
+[wrap-git]
+url = https://gitlab.freedesktop.org/mesa/drm.git
+revision = b42a9d939c896ef9b1ef9423218fb9668d616d93
