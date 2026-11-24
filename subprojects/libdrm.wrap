@@ -1,0 +1,4 @@
+[wrap-git]
+url = https://gitlab.freedesktop.org/mesa/drm.git
+revision = 33fab8cbca7f7581e955a675597d14412702edc4
+# pinned: revision verified during the wlroots 0.20.2 port (upstream ships HEAD)

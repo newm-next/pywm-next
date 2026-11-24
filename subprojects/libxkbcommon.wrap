@@ -1,0 +1,4 @@
+[wrap-git]
+url = https://github.com/xkbcommon/libxkbcommon.git
+revision = 15b2b4e47a350712c0ebd120a100c95a7c17e04e
+# pinned: revision verified during the wlroots 0.20.2 port (upstream ships HEAD)

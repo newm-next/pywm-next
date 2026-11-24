@@ -30,6 +30,11 @@ endif
 
 # Dependencies
 
+# wlroots must be set up first: its wayland subproject overrides the
+# 'wayland-server' dependency (and wayland-scanner), so the dependency()
+# calls below must resolve through it.
+wlroots        = subproject('wlroots', default_options: ['default_library=static']).get_variable('wlroots')
+
 wayland_server = dependency('wayland-server')
 wayland_client = dependency('wayland-client')
 wayland_cursor = dependency('wayland-cursor')
@@ -43,8 +48,6 @@ pthread        = meson.get_compiler('c').find_library('pthread')
 math           = meson.get_compiler('c').find_library('m')
 
 has_xwayland = xwayland.found() and get_option('xwayland').enabled()
-
-wlroots        = subproject('wlroots', default_options: ['default_library=static']).get_variable('wlroots')
 
 if has_xwayland
     add_project_arguments(

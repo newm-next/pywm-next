@@ -1,0 +1,4 @@
+[wrap-git]
+url = https://gitlab.freedesktop.org/pixman/pixman.git
+revision = b88b92e512a33a222e08352e87ff90a57d33c7b5
+# pinned: revision verified during the wlroots 0.20.2 port (upstream ships HEAD)
