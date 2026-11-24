@@ -81,6 +81,12 @@ static void popup_handle_destroy(struct wl_listener* listener, void* data){
     free(popup);
 }
 
+static void popup_handle_popup_destroy(struct wl_listener* listener, void* data){
+    struct wm_popup_layer* popup = wl_container_of(listener, popup, popup_destroy);
+    wm_popup_layer_destroy(popup);
+    free(popup);
+}
+
 static void popup_handle_new_popup(struct wl_listener* listener, void* data){
     struct wm_popup_layer* popup = wl_container_of(listener, popup, new_popup);
     struct wlr_xdg_popup* wlr_xdg_popup = data;
@@ -282,6 +288,11 @@ void wm_popup_layer_init(struct wm_popup_layer* popup, struct wm_view_layer* roo
     popup->destroy.notify = &popup_handle_destroy;
     wl_signal_add(&wlr_xdg_popup->base->events.destroy, &popup->destroy);
 
+    /* Same ordering as for xdg toplevels: wlr_xdg_popup is freed, and its
+     * listener lists checked, before the xdg_surface goes away. */
+    popup->popup_destroy.notify = &popup_handle_popup_destroy;
+    wl_signal_add(&wlr_xdg_popup->events.destroy, &popup->popup_destroy);
+
     popup->new_popup.notify = &popup_handle_new_popup;
     wl_signal_add(&wlr_xdg_popup->base->events.new_popup, &popup->new_popup);
 
@@ -310,6 +321,7 @@ void wm_popup_layer_destroy(struct wm_popup_layer* popup){
     wl_list_remove(&popup->map.link);
     wl_list_remove(&popup->unmap.link);
     wl_list_remove(&popup->destroy.link);
+    wl_list_remove(&popup->popup_destroy.link);
     wl_list_remove(&popup->new_popup.link);
     wl_list_remove(&popup->new_subsurface.link);
     wl_list_remove(&popup->surface_commit.link);

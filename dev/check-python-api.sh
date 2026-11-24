@@ -105,6 +105,25 @@ else
 	note "ok   scroll: delta_discrete converted from v120 to whole notches"
 fi
 
+# --- destruction order ---------------------------------------------------
+# wlroots asserts, when destroying an object, that a fixed set of its signals
+# has no listener left. Those checks run after the object's own destroy signal,
+# so the teardown must happen there - not on a later signal of a parent object.
+if ! command -v python3 >/dev/null 2>&1; then
+	note "skip destruction order (python3 not found)"
+elif [ ! -d subprojects/wlroots ]; then
+	note "skip destruction order (subprojects/wlroots not checked out)"
+else
+	if destroy_out=$(python3 dev/check-destroy-order.py 2>&1); then
+		printf '%s\n' "$destroy_out"
+		note "ok   every listener released before wlroots destroys its object"
+	else
+		printf '%s\n' "$destroy_out"
+		note "FAIL listener left on a wlroots object at destruction (listed above)"
+		fail=1
+	fi
+fi
+
 # --- configure call graph (wlroots sources) ------------------------------
 # dev/check-configure-guards.py rebuilds the call graph of the wlroots sources
 # shipped in subprojects/wlroots, lists every public function that ends up

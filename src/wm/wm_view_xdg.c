@@ -105,6 +105,12 @@ static void popup_handle_destroy(struct wl_listener* listener, void* data){
     free(popup);
 }
 
+static void popup_handle_popup_destroy(struct wl_listener* listener, void* data){
+    struct wm_popup_xdg* popup = wl_container_of(listener, popup, popup_destroy);
+    wm_popup_xdg_destroy(popup);
+    free(popup);
+}
+
 static void popup_handle_new_popup(struct wl_listener* listener, void* data){
     struct wm_popup_xdg* popup = wl_container_of(listener, popup, new_popup);
     struct wlr_xdg_popup* wlr_xdg_popup = data;
@@ -168,6 +174,17 @@ static void handle_unmap(struct wl_listener* listener, void* data){
 
 static void handle_destroy(struct wl_listener* listener, void* data){
     struct wm_view_xdg* view = wl_container_of(listener, view, destroy);
+    wm_callback_destroy_view(&view->super);
+    wm_content_destroy(&view->super.super);
+    free(view);
+}
+
+static void handle_toplevel_destroy(struct wl_listener* listener, void* data){
+    /* Same teardown, but triggered by the toplevel: wlroots verifies that all
+     * its listener lists are empty right after this emission, so the view has
+     * to be gone by then. wm_view_xdg_destroy() removes the xdg_surface
+     * listener too, which prevents a second teardown. */
+    struct wm_view_xdg* view = wl_container_of(listener, view, toplevel_destroy);
     wm_callback_destroy_view(&view->super);
     wm_content_destroy(&view->super.super);
     free(view);
@@ -487,6 +504,12 @@ void wm_popup_xdg_init(struct wm_popup_xdg* popup, struct wm_view_xdg* toplevel,
     popup->destroy.notify = &popup_handle_destroy;
     wl_signal_add(&wlr_xdg_popup->base->events.destroy, &popup->destroy);
 
+    /* Same ordering as for toplevels: wlr_xdg_popup is freed - and its listener
+     * lists checked - by destroy_xdg_popup() (wlr_xdg_popup.c:476-477) before
+     * the xdg_surface goes away. */
+    popup->popup_destroy.notify = &popup_handle_popup_destroy;
+    wl_signal_add(&wlr_xdg_popup->events.destroy, &popup->popup_destroy);
+
     popup->new_popup.notify = &popup_handle_new_popup;
     wl_signal_add(&wlr_xdg_popup->base->events.new_popup, &popup->new_popup);
 
@@ -515,6 +538,7 @@ void wm_popup_xdg_destroy(struct wm_popup_xdg* popup){
     wl_list_remove(&popup->map.link);
     wl_list_remove(&popup->unmap.link);
     wl_list_remove(&popup->destroy.link);
+    wl_list_remove(&popup->popup_destroy.link);
     wl_list_remove(&popup->new_popup.link);
     wl_list_remove(&popup->new_subsurface.link);
     wl_list_remove(&popup->surface_commit.link);
@@ -545,6 +569,20 @@ void wm_view_xdg_init(struct wm_view_xdg* view, struct wm_server* server, struct
 
     view->destroy.notify = &handle_destroy;
     wl_signal_add(&surface->events.destroy, &view->destroy);
+
+    /*
+     * wlroots destroys the toplevel object before the xdg_surface: the role
+     * resource is destroyed first (wlr_xdg_surface.c:484-497 calls
+     * destroy_xdg_toplevel), and destroy_xdg_toplevel() then checks that every
+     * listener list of the toplevel is empty (wlr_xdg_toplevel.c:548-557)
+     * before freeing it. Listening on xdg_surface->events.destroy is therefore
+     * too late - pywm's request_* listeners are still attached and the
+     * assertion fires. Tearing the view down from the toplevel's own destroy
+     * signal makes the lists empty in time; the xdg_surface listener stays as a
+     * fallback and is removed during that first teardown.
+     */
+    view->toplevel_destroy.notify = &handle_toplevel_destroy;
+    wl_signal_add(&surface->toplevel->events.destroy, &view->toplevel_destroy);
 
     view->new_popup.notify = &handle_new_popup;
     wl_signal_add(&surface->events.new_popup, &view->new_popup);
@@ -620,6 +658,7 @@ static void wm_view_xdg_destroy(struct wm_view* super){
     wl_list_remove(&view->map.link);
     wl_list_remove(&view->unmap.link);
     wl_list_remove(&view->destroy.link);
+    wl_list_remove(&view->toplevel_destroy.link);
     wl_list_remove(&view->new_popup.link);
     wl_list_remove(&view->new_subsurface.link);
 
