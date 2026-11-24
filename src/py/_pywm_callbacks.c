@@ -118,11 +118,62 @@ static bool call_button(struct wlr_pointer_button_event* event){
     return false;
 }
 
+/*
+ * wlroots >= 0.17 reports discrete axis values in units of
+ * WLR_POINTER_AXIS_DISCRETE_STEP (120) instead of one step per notch, and a
+ * high resolution wheel sends fractions of a notch (e.g. 8 events of 15).
+ * newm was written against the 0.16 semantics (+-1 per notch), so whole
+ * notches are accumulated per pointer and per orientation; the remainder is
+ * carried over to the next event of the same direction.
+ *
+ * Sources, verified:
+ *   0.16   backend/libinput/pointer.c:140-141  discrete = libinput value (+-1)
+ *          backend/libinput/events.c:271        only LIBINPUT_EVENT_POINTER_AXIS
+ *   0.20.2 backend/libinput/pointer.c:178-179  discrete = value120
+ *          backend/libinput/events.c:169-171    POINTER_AXIS is ignored
+ *          include/wlr/types/wlr_pointer.h:74   DISCRETE_STEP = 120
+ */
+static struct {
+    struct wlr_pointer* pointer;
+    int32_t remainder[2]; /* [0] vertical, [1] horizontal */
+} axis_accumulator = { NULL, { 0, 0 } };
+
+static int wm_axis_discrete_value(struct wlr_pointer_axis_event* event){
+    if(event->pointer != axis_accumulator.pointer){
+        axis_accumulator.pointer = event->pointer;
+        axis_accumulator.remainder[0] = 0;
+        axis_accumulator.remainder[1] = 0;
+    }
+
+    int orientation = event->orientation == WL_POINTER_AXIS_HORIZONTAL_SCROLL ? 1 : 0;
+
+    /* Only wheel sources carry discrete steps in 0.20; for anything else
+     * (finger, continuous) libinput leaves the field at 0, which matches what
+     * 0.16 reported for touchpads. Drop any pending remainder first. */
+    if(event->source != WL_POINTER_AXIS_SOURCE_WHEEL || event->delta_discrete == 0){
+        axis_accumulator.remainder[orientation] = 0;
+        return event->delta_discrete / WLR_POINTER_AXIS_DISCRETE_STEP;
+    }
+
+    /* Direction change: the remainder of the previous direction is void. */
+    if(axis_accumulator.remainder[orientation] != 0 &&
+       ((axis_accumulator.remainder[orientation] > 0) != (event->delta_discrete > 0))){
+        axis_accumulator.remainder[orientation] = 0;
+    }
+
+    int32_t accumulated = axis_accumulator.remainder[orientation] + event->delta_discrete;
+    int32_t steps = accumulated / WLR_POINTER_AXIS_DISCRETE_STEP;
+    axis_accumulator.remainder[orientation] = accumulated - steps * WLR_POINTER_AXIS_DISCRETE_STEP;
+
+    return steps;
+}
+
 static bool call_axis(struct wlr_pointer_axis_event* event){
     if(callbacks.axis){
+        int discrete = wm_axis_discrete_value(event);
         PyGILState_STATE gil = PyGILState_Ensure();
         PyObject* args = Py_BuildValue("(iiidi)", event->time_msec, event->source, event->orientation,
-                event->delta, event->delta_discrete);
+                event->delta, discrete);
         bool result = call_bool(callbacks.axis, args);
         PyGILState_Release(gil);
         return result;
