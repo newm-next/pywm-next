@@ -14,6 +14,9 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 builddir=${1:-build}
 envsh=$root/../env/env.sh
 
+# Everything below is relative to the project root, whatever the caller's cwd.
+cd "$root"
+
 # Toolchain + user sysroot prepared for this project (not needed on a machine
 # that already has the build deps installed system-wide).
 if [ -f "$envsh" ]; then
