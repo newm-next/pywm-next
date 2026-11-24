@@ -25,6 +25,38 @@
 /*
  * Callbacks
  */
+static void handle_damage(struct wl_listener* listener, void* data){
+    struct wm_output* output = wl_container_of(listener, output, damage);
+    struct wlr_output_event_damage* event = data;
+
+    /*
+     * Backend or software-cursor damage. wlr_output_damage used to listen to
+     * this signal for pywm in 0.16 (types/wlr_output_damage.c, the fork):
+     * it added the region to the ring and scheduled a frame.
+     */
+    if(event->damage){
+        wlr_damage_ring_add(&output->damage_ring, event->damage);
+    }
+    wlr_output_schedule_frame(output->wlr_output);
+}
+
+static void handle_needs_frame(struct wl_listener* listener, void* data){
+    struct wm_output* output = wl_container_of(listener, output, needs_frame);
+
+    /* Equivalent of output_handle_needs_frame() in 0.16 wlr_output_damage */
+    wlr_output_schedule_frame(output->wlr_output);
+}
+
+void wm_output_damage(struct wm_output* output, const pixman_region32_t* damage){
+    wlr_damage_ring_add(&output->damage_ring, damage);
+    wlr_output_schedule_frame(output->wlr_output);
+}
+
+void wm_output_damage_whole(struct wm_output* output){
+    wlr_damage_ring_add_whole(&output->damage_ring);
+    wlr_output_schedule_frame(output->wlr_output);
+}
+
 static void handle_destroy(struct wl_listener *listener, void *data) {
     wlr_log(WLR_DEBUG, "Output: Destroy");
     struct wm_output *output = wl_container_of(listener, output, destroy);
@@ -146,7 +178,7 @@ static void render(struct wm_output *output, struct timespec now) {
 
     if (!wlr_output_commit_state(output->wlr_output, &output->render_state)) {
         wlr_log(WLR_DEBUG, "Commit frame failed");
-        wlr_damage_ring_add_whole(&output->damage_ring);
+        wm_output_damage_whole(output);
     }
 
     wlr_output_state_finish(&output->render_state);
@@ -279,7 +311,7 @@ static double configure(struct wm_output* output){
     wlr_output_state_finish(&state);
 
     /* Everything is new: repaint the whole output */
-    wlr_damage_ring_add_whole(&output->damage_ring);
+    wm_output_damage_whole(output);
 
     return scale;
 }
@@ -304,7 +336,7 @@ void wm_output_init(struct wm_output *output, struct wm_server *server,
     }
 
     wlr_damage_ring_init(&output->damage_ring);
-    wlr_damage_ring_add_whole(&output->damage_ring);
+    wm_output_damage_whole(output);
 
     double scale = configure(output);
 
@@ -319,6 +351,12 @@ void wm_output_init(struct wm_output *output, struct wm_server *server,
 
     output->frame.notify = handle_frame;
     wl_signal_add(&output->wlr_output->events.frame, &output->frame);
+
+    output->damage.notify = handle_damage;
+    wl_signal_add(&output->wlr_output->events.damage, &output->damage);
+
+    output->needs_frame.notify = handle_needs_frame;
+    wl_signal_add(&output->wlr_output->events.needs_frame, &output->needs_frame);
 
     /* Let the cursor know we possibly have a new scale */
     wm_cursor_ensure_loaded_for_scale(server->wm_seat->wm_cursor, scale);
@@ -341,6 +379,8 @@ void wm_output_destroy(struct wm_output *output) {
     wl_list_remove(&output->commit.link);
     wl_list_remove(&output->present.link);
     wl_list_remove(&output->frame.link);
+    wl_list_remove(&output->damage.link);
+    wl_list_remove(&output->needs_frame.link);
     wl_list_remove(&output->link);
     wm_layout_remove_output(output->wm_layout, output);
 

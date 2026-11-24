@@ -105,6 +105,31 @@ else
 	note "ok   scroll: delta_discrete converted from v120 to whole notches"
 fi
 
+# --- frame scheduling guard ---------------------------------------------
+# wlroots 0.16's wlr_output_damage scheduled a frame for us whenever damage was
+# added. Since 0.17 the compositor has to call wlr_output_schedule_frame()
+# itself, otherwise wl_surface.frame callbacks never come back and clients
+# freeze. Every function that adds damage to a ring must schedule a frame.
+if ! awk '
+	BEGIN { fn = ""; buf = ""; bad = 0 }
+	function check() {
+		if (fn != "" && buf ~ /wlr_damage_ring_add/ && buf !~ /wlr_output_schedule_frame/) {
+			printf("     %s: %s() adds damage but never calls wlr_output_schedule_frame\n", FILENAME, fn);
+			bad = 1
+		}
+	}
+	/^(static )?(void|int|bool|char|float|double|struct|unsigned|long|size_t|const) .*\(.*\)[ ]*\{?[ ]*$/ {
+		check(); fn = $0; sub(/\(.*/, "", fn); n = split(fn, a, " "); fn = a[n]; buf = ""; next
+	}
+	{ buf = buf "\n" $0 }
+	END { check(); exit bad }
+' src/wm/*.c; then
+	note "FAIL a damage ring add does not schedule a frame (listed above)"
+	fail=1
+else
+	note "ok   every damage ring add schedules a frame"
+fi
+
 # --- destruction order ---------------------------------------------------
 # wlroots asserts, when destroying an object, that a fixed set of its signals
 # has no listener left. Those checks run after the object's own destroy signal,

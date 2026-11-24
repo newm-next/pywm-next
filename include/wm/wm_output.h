@@ -32,6 +32,8 @@ struct wm_output {
     struct wl_listener mode;
     struct wl_listener present;
     struct wl_listener frame;
+    struct wl_listener damage;
+    struct wl_listener needs_frame;
 
     bool expecting_frame;
     struct timespec last_frame;
@@ -45,6 +47,14 @@ void wm_output_init(struct wm_output* output, struct wm_server* server, struct w
 void wm_output_destroy(struct wm_output* output);
 
 void wm_output_reconfigure(struct wm_output* output);
+
+/*
+ * Damage the output and ask for a frame. wlr_output_damage used to do both in
+ * 0.16; since it is gone every damage has to schedule the frame itself,
+ * otherwise wl_surface.frame callbacks are never sent back to clients.
+ */
+void wm_output_damage(struct wm_output* output, const pixman_region32_t* damage);
+void wm_output_damage_whole(struct wm_output* output);
 
 
 /*
