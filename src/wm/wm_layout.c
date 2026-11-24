@@ -98,7 +98,7 @@ void wm_layout_damage_whole(struct wm_layout* layout){
     struct wm_output* output;
     wl_list_for_each(output, &layout->wm_outputs, link){
         DEBUG_PERFORMANCE(damage, output->key);
-        wlr_damage_ring_add_whole(&output->damage_ring);
+        wm_output_damage_whole(output);
 
         if(layout->refresh_master_output != layout->refresh_scheduled){
             layout->refresh_scheduled = output->key;
@@ -125,7 +125,7 @@ void wm_layout_damage_from(struct wm_layout* layout, struct wm_content* content,
 }
 
 void wm_layout_damage_output(struct wm_layout* layout, struct wm_output* output, pixman_region32_t* damage, struct wm_content* from){
-    wlr_damage_ring_add(&output->damage_ring, damage);
+    wm_output_damage(output, damage);
 
     struct wm_content* content;
     wl_list_for_each(content, &layout->wm_server->wm_contents, link){
