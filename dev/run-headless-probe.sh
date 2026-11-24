@@ -147,6 +147,13 @@ if [ $probe_rc -eq 4 ]; then
 	exit 1
 fi
 
+if [ $probe_rc -eq 5 ]; then
+	echo "RESULT: FAIL - no frame callback: compositor does not repaint"
+	echo "  the window was damaged and wl_surface.frame never fired within 2s"
+	[ -n "$step" ] && echo "  during step: $step"
+	exit 1
+fi
+
 if [ $probe_rc -ne 0 ]; then
 	echo "RESULT: FAIL - probe exited $probe_rc"
 	exit 1

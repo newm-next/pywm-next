@@ -23,9 +23,12 @@
  * Build (see run-headless-probe.sh): the xdg-shell, xdg-decoration and
  * layer-shell XML are in the tree; wayland-scanner comes from the build.
  */
+#include <errno.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <wayland-client.h>
@@ -135,6 +138,35 @@ static struct buffer make_buffer(int w, int h) {
 	return b;
 }
 
+/* ------------------------------------------------- surface frame callback */
+static int frame_drawn;
+
+static void frame_handle_done(void *data, struct wl_callback *cb, uint32_t t) {
+	(void)data; (void)t;
+	frame_drawn = 1;
+	wl_callback_destroy(cb);
+}
+static const struct wl_callback_listener frame_listener = { .done = frame_handle_done };
+
+/* Wait up to timeout_ms for the compositor to report the frame as drawn.
+ * Returns 0 on success, -1 on timeout, -2 on connection loss. */
+static int wait_frame(int timeout_ms) {
+	struct timespec start, now;
+	clock_gettime(CLOCK_MONOTONIC, &start);
+	while (!frame_drawn) {
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		long elapsed = (now.tv_sec - start.tv_sec) * 1000L +
+			(now.tv_nsec - start.tv_nsec) / 1000000L;
+		if (elapsed >= timeout_ms) return -1;
+		struct pollfd pfd = { .fd = wl_display_get_fd(display), .events = POLLIN };
+		int r = poll(&pfd, 1, (int)(timeout_ms - elapsed));
+		if (r == 0) return -1;
+		if (r < 0) { if (errno == EINTR) continue; return -2; }
+		if (wl_display_dispatch(display) < 0) return -2;
+	}
+	return 0;
+}
+
 int main(void) {
 	setvbuf(stdout, NULL, _IONBF, 0);
 
@@ -186,6 +218,33 @@ int main(void) {
 	wl_surface_attach(surface, buf.wl, 0, 0);
 	wl_surface_commit(surface);
 	if (roundtrip()) return 3;
+
+	/* --- repaint: frame callbacks must come back ----------------------- */
+	for (int i = 0; i < 3; i++) {
+		char label[96];
+		snprintf(label, sizeof(label), "frame %d: damage the window, wait for wl_surface.frame done", i + 1);
+		begin(label);
+		frame_drawn = 0;
+		struct wl_callback *cb = wl_surface_frame(surface);
+		wl_callback_add_listener(cb, &frame_listener, NULL);
+		/* touch the pixels: there must be something to redraw */
+		struct buffer next = make_buffer(200, 120);
+		memset(next.data, 0x10 * (i + 1), next.size);
+		wl_surface_attach(surface, next.wl, 0, 0);
+		wl_surface_damage_buffer(surface, 0, 0, 200, 120);
+		wl_surface_commit(surface);
+		int r = wait_frame(2000);
+		if (r == -1) {
+			printf("  no frame callback: compositor does not repaint\n");
+			return 5;
+		}
+		if (r < 0) {
+			fprintf(stderr, "step %d (%s): connection lost (PROBE_CONNECTION_LOST)\n",
+				step_no, step_name);
+			return 3;
+		}
+		printf("  ok: frame %d drawn\n", i + 1);
+	}
 
 	/* --- popup --------------------------------------------------------- */
 	begin("popup created on the window");
