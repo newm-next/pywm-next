@@ -186,18 +186,51 @@ static void handle_surface_commit(struct wl_listener* listener, void* data){
 /*
  * Class implementation
  */
+static void child_handle_associate(struct wl_listener* listener, void* data){
+    struct wm_view_xwayland_child* child = wl_container_of(listener, child, associate);
+
+    /*
+     * wlroots >= 0.18: wlr_xwayland_surface->surface is only valid between the
+     * associate and dissociate events, so the surface listeners are attached
+     * here instead of at creation time.
+     */
+    if(child->associated || !child->wlr_xwayland_surface->surface) return;
+
+    wl_signal_add(&child->wlr_xwayland_surface->surface->events.map, &child->map);
+    wl_signal_add(&child->wlr_xwayland_surface->surface->events.unmap, &child->unmap);
+    child->associated = true;
+}
+
+static void child_handle_dissociate(struct wl_listener* listener, void* data){
+    struct wm_view_xwayland_child* child = wl_container_of(listener, child, dissociate);
+
+    if(!child->associated) return;
+
+    wl_list_remove(&child->map.link);
+    wl_list_remove(&child->unmap.link);
+    if(child->mapped) wl_list_remove(&child->surface_commit.link);
+    child->mapped = false;
+    child->associated = false;
+}
+
 void wm_view_xwayland_child_init(struct wm_view_xwayland_child* child, struct wm_view_xwayland* parent, struct wlr_xwayland_surface* surface){
     child->parent = parent;
     child->wlr_xwayland_surface = surface;
+    child->associated = false;
+    child->mapped = false;
 
-    child->map.notify = &child_handle_map;
-    wl_signal_add(&surface->surface->events.map, &child->map);
+    wl_list_init(&child->map.link);
+    wl_list_init(&child->unmap.link);
+    wl_list_init(&child->surface_commit.link);
+
+    child->associate.notify = &child_handle_associate;
+    wl_signal_add(&surface->events.associate, &child->associate);
+
+    child->dissociate.notify = &child_handle_dissociate;
+    wl_signal_add(&surface->events.dissociate, &child->dissociate);
 
     child->request_configure.notify = &child_handle_request_configure;
     wl_signal_add(&surface->events.request_configure, &child->request_configure);
-
-    child->unmap.notify = &child_handle_unmap;
-    wl_signal_add(&surface->surface->events.unmap, &child->unmap);
 
     child->destroy.notify = &child_handle_destroy;
     wl_signal_add(&surface->events.destroy, &child->destroy);
@@ -210,12 +243,43 @@ void wm_view_xwayland_child_init(struct wm_view_xwayland_child* child, struct wm
 
 void wm_view_xwayland_child_destroy(struct wm_view_xwayland_child* child){
     wl_list_remove(&child->request_configure.link);
-    wl_list_remove(&child->map.link);
-    wl_list_remove(&child->unmap.link);
+    wl_list_remove(&child->associate.link);
+    wl_list_remove(&child->dissociate.link);
+    if(child->associated){
+        wl_list_remove(&child->map.link);
+        wl_list_remove(&child->unmap.link);
+        if(child->mapped) wl_list_remove(&child->surface_commit.link);
+    }
     wl_list_remove(&child->destroy.link);
-    if(child->mapped) wl_list_remove(&child->surface_commit.link);
 
     wl_list_remove(&child->link);
+}
+
+static void handle_associate(struct wl_listener* listener, void* data){
+    struct wm_view_xwayland* view = wl_container_of(listener, view, associate);
+
+    /*
+     * wlroots >= 0.18: wlr_xwayland_surface->surface only exists between the
+     * associate and dissociate events (see wlr/xwayland/xwayland.h:126-128).
+     * Attaching the surface listeners at creation time dereferenced NULL.
+     */
+    if(view->associated || !view->wlr_xwayland_surface->surface) return;
+
+    wl_signal_add(&view->wlr_xwayland_surface->surface->events.map, &view->map);
+    wl_signal_add(&view->wlr_xwayland_surface->surface->events.unmap, &view->unmap);
+    view->associated = true;
+}
+
+static void handle_dissociate(struct wl_listener* listener, void* data){
+    struct wm_view_xwayland* view = wl_container_of(listener, view, dissociate);
+
+    if(!view->associated) return;
+
+    wl_list_remove(&view->map.link);
+    wl_list_remove(&view->unmap.link);
+    if(view->super.mapped) wl_list_remove(&view->surface_commit.link);
+    view->super.mapped = false;
+    view->associated = false;
 }
 
 void wm_view_xwayland_init(struct wm_view_xwayland* view, struct wm_server* server, struct wlr_xwayland_surface* surface){
@@ -225,9 +289,20 @@ void wm_view_xwayland_init(struct wm_view_xwayland* view, struct wm_server* serv
 
     view->parent = NULL;
     view->super.floating = false;
+    view->associated = false;
     wl_list_init(&view->children);
 
     view->wlr_xwayland_surface = surface;
+
+    wl_list_init(&view->map.link);
+    wl_list_init(&view->unmap.link);
+    wl_list_init(&view->surface_commit.link);
+
+    view->associate.notify = &handle_associate;
+    wl_signal_add(&surface->events.associate, &view->associate);
+
+    view->dissociate.notify = &handle_dissociate;
+    wl_signal_add(&surface->events.dissociate, &view->dissociate);
 
     view->request_configure.notify = &handle_request_configure;
     wl_signal_add(&surface->events.request_configure, &view->request_configure);
@@ -235,17 +310,11 @@ void wm_view_xwayland_init(struct wm_view_xwayland* view, struct wm_server* serv
     view->set_parent.notify = &handle_set_parent;
     wl_signal_add(&surface->events.set_parent, &view->set_parent);
 
-    view->map.notify = &handle_map;
-    wl_signal_add(&surface->surface->events.map, &view->map);
-
-    view->unmap.notify = &handle_unmap;
-    wl_signal_add(&surface->surface->events.unmap, &view->unmap);
-
     view->destroy.notify = &handle_destroy;
     wl_signal_add(&surface->events.destroy, &view->destroy);
 
     view->surface_commit.notify = &handle_surface_commit;
-    /* signal is added on map */
+    /* map/unmap signals are added on associate, surface_commit on map */
 
 }
 
@@ -254,10 +323,14 @@ static void wm_view_xwayland_destroy(struct wm_view* super){
 
     wl_list_remove(&view->request_configure.link);
     wl_list_remove(&view->set_parent.link);
-    wl_list_remove(&view->map.link);
-    wl_list_remove(&view->unmap.link);
+    wl_list_remove(&view->associate.link);
+    wl_list_remove(&view->dissociate.link);
+    if(view->associated){
+        wl_list_remove(&view->map.link);
+        wl_list_remove(&view->unmap.link);
+        if(view->super.mapped) wl_list_remove(&view->surface_commit.link);
+    }
     wl_list_remove(&view->destroy.link);
-    if(view->super.mapped) wl_list_remove(&view->surface_commit.link);
 }
 
 static void wm_view_xwayland_get_credentials(struct wm_view* super, pid_t* pid, uid_t* uid, gid_t* gid){

@@ -129,6 +129,11 @@ static void popup_handle_surface_commit(struct wl_listener* listener, void* data
 
     if(!popup->toplevel) return;
 
+    /* Same initial-configure requirement as for toplevels (wlroots >= 0.18) */
+    if(popup->wlr_xdg_popup->base->initial_commit){
+        wlr_xdg_surface_schedule_configure(popup->wlr_xdg_popup->base);
+    }
+
     wm_layout_damage_from(
             popup->toplevel->super.super.wm_server->wm_layout,
             &popup->toplevel->super.super,
@@ -275,6 +280,16 @@ static void handle_surface_commit(struct wl_listener* listener, void* data){
 
     if(update){
         wm_callback_update_view(&view->super);
+    }
+
+    /*
+     * wlroots >= 0.18: the compositor has to answer the first commit with a
+     * configure, otherwise the client never maps. The size was already pushed
+     * into the pending state by the layout above (wlr_xdg_toplevel_set_size()
+     * only records pending until the surface is initialized).
+     */
+    if(view->wlr_xdg_surface->initial_commit){
+        wlr_xdg_surface_schedule_configure(view->wlr_xdg_surface);
     }
 
     wm_layout_damage_from(

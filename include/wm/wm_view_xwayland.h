@@ -16,8 +16,11 @@ struct wm_view_xwayland_child {
     struct wlr_xwayland_surface* wlr_xwayland_surface;
 
     bool mapped;
+    bool associated;
 
     struct wl_listener request_configure;
+    struct wl_listener associate;
+    struct wl_listener dissociate;
     struct wl_listener map;
     struct wl_listener unmap;
     struct wl_listener destroy;
@@ -39,8 +42,12 @@ struct wm_view_xwayland {
 
     int size_constraints[4];
 
+    bool associated;
+
     struct wl_listener request_configure;
     struct wl_listener set_parent;
+    struct wl_listener associate;
+    struct wl_listener dissociate;
     struct wl_listener map;
     struct wl_listener unmap;
     struct wl_listener destroy;
