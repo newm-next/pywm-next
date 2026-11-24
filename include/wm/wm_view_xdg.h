@@ -3,6 +3,7 @@
 
 #include <wayland-server.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_server_decoration.h>
 
 #include "wm/wm_view.h"
@@ -82,6 +83,8 @@ struct wm_view_xdg {
         bool maximized;
         bool activated_set;
         bool activated;
+        bool deco_mode_set;
+        enum wlr_xdg_toplevel_decoration_v1_mode deco_mode;
     } pending;
 
     int floating_set; /* -1: not at all, 0: false, 1: true */
